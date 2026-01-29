@@ -14,9 +14,9 @@
 	- This might be because we have closed ports on some SuperNETs nodes I need to open still for websockets...
 - [ ] Collapse chat button is hidden on mobile, leaving the chat stuck open
 - [ ] Does not properly detect when a client quits so the cam gets frozen and the user remains in the user list still.
-- [ ] Self camera view gets frozen often when someone else turns their camera on, but others see it live.
-- [ ] Turning off cam or quitting causes the cam to freeze and the box not removing itself.
-- [ ] Turning on camera makes audio stop working *(Reported by bombuzal, Firefox/Linux)*
+- [X] Self camera view gets frozen often when someone else turns their camera on, but others see it live.
+- [X] Turning off cam or quitting causes the cam to freeze and the box not removing itself.
+- [X] Turning on camera makes audio stop working *(Reported by bombuzal, Firefox/Linux)*
 
 ## Contribute
 Come join us on `irc.supernets.org` in `#hardchats` for testing, feedback, & collaboration!

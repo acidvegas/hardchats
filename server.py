@@ -87,7 +87,8 @@ async def get_config(request):
 async def websocket_handler(request):
     global session_start
     
-    ws = web.WebSocketResponse()
+    # Heartbeat of 30 seconds - if client doesn't respond to ping within 30s, connection is closed
+    ws = web.WebSocketResponse(heartbeat=30.0)
     await ws.prepare(request)
     
     client_id = str(uuid.uuid4())[:8]
