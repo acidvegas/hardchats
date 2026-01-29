@@ -17,3 +17,7 @@
 - [ ] Self camera view gets frozen often when someone else turns their camera on, but others see it live.
 - [ ] Turning off cam or quitting causes the cam to freeze and the box not removing itself.
 - [ ] Turning on camera makes audio stop working *(Reported by bombuzal, Firefox/Linux)*
+
+## Contribute
+
+Come join us on `irc.supernets.org` in `#hardchats` for testing, feedback, & collaboration!
