@@ -19,5 +19,4 @@
 - [ ] Turning on camera makes audio stop working *(Reported by bombuzal, Firefox/Linux)*
 
 ## Contribute
-
 Come join us on `irc.supernets.org` in `#hardchats` for testing, feedback, & collaboration!
