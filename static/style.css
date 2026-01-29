@@ -435,6 +435,19 @@ body {
 
 .thumbnail .video-tile:hover { border-color: var(--acid); }
 
+/* ========== SIDEBAR OVERLAY (mobile) ========== */
+#sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 99;
+    display: none;
+}
+
+#sidebar-overlay:not(.hidden) {
+    display: block;
+}
+
 /* ========== IRC SIDEBAR (LEFT) ========== */
 #irc-sidebar {
     display: flex;
@@ -578,6 +591,15 @@ body {
     font-size: 0.6rem;
     font-weight: 700;
     color: var(--text-primary);
+}
+
+.irc-control-btn.close-irc {
+    display: none;
+}
+
+.irc-control-btn.close-irc:hover {
+    background: var(--danger);
+    color: white;
 }
 
 #irc-messages {
@@ -1096,8 +1118,12 @@ body {
         transform: translateX(0);
     }
     
-    /* Show close button on mobile */
+    /* Show close buttons on mobile */
     .close-btn {
+        display: flex;
+    }
+    
+    .irc-control-btn.close-irc {
         display: flex;
     }
     

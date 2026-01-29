@@ -191,6 +191,10 @@ async def handle_message(client_id, data):
             'id': client_id,
             'enabled': enabled
         })
+    
+    elif msg_type == 'leave':
+        # Explicit leave message for immediate cleanup (triggered on tab close)
+        await cleanup(client_id)
 
 
 async def broadcast(sender_id, message):

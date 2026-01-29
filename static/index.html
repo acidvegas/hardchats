@@ -28,6 +28,9 @@
     </div>
     
     <div id="chat-screen" class="hidden">
+        <!-- Sidebar Overlay (for mobile) -->
+        <div id="sidebar-overlay" class="hidden"></div>
+        
         <!-- IRC Sidebar (Left) -->
         <div id="irc-sidebar" class="collapsed">
             <div class="irc-panel">
@@ -45,6 +48,11 @@
                         <button id="irc-disconnect" class="irc-control-btn disconnect hidden" title="Disconnect from IRC">
                             <svg viewBox="0 0 24 24" fill="currentColor">
                                 <path d="M6 6h12v12H6z"/>
+                            </svg>
+                        </button>
+                        <button id="irc-close" class="irc-control-btn close-irc" title="Close Chat">
+                            <svg viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
                             </svg>
                         </button>
                     </div>

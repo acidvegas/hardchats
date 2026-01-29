@@ -45,6 +45,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     $('volume-btn').addEventListener('click', toggleVolume);
     $('users-btn').addEventListener('click', toggleSidebar);
     $('close-sidebar').addEventListener('click', toggleSidebar);
+    $('sidebar-overlay').addEventListener('click', closeSidebars);
     
     // IRC event listeners (from irc.js)
     initIrcListeners();
@@ -462,7 +463,20 @@ async function createPeerConnection(peerId, username, initiator) {
 }
 
 async function handleOffer(peerId, username, sdp) {
-    const pc = await createPeerConnection(peerId, username, false);
+    let pc;
+    
+    // Check if peer connection already exists (renegotiation)
+    if (state.peers[peerId] && state.peers[peerId].pc && 
+        state.peers[peerId].pc.connectionState !== 'closed' &&
+        state.peers[peerId].pc.connectionState !== 'failed') {
+        // Reuse existing connection for renegotiation
+        pc = state.peers[peerId].pc;
+        console.log(`[WebRTC] Renegotiating with ${peerId}`);
+    } else {
+        // Create new connection for new peer
+        pc = await createPeerConnection(peerId, username, false);
+    }
+    
     await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp }));
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
@@ -488,7 +502,9 @@ function setupAudioAnalyser(peerId, stream) {
         
         // Create gain node for volume control
         const gainNode = audioContext.createGain();
-        gainNode.gain.value = (state.peers[peerId]?.volume ?? 100) / 100;
+        // Respect both global mute (volumeEnabled) and individual volume setting
+        const peerVolume = (state.peers[peerId]?.volume ?? 100) / 100;
+        gainNode.gain.value = state.volumeEnabled ? peerVolume : 0;
         
         // Connect: source -> analyser (for speaking detection)
         // Also: source -> gain -> destination (for playback with volume control)
@@ -898,6 +914,30 @@ function toggleSidebar() {
     state.sidebarOpen = !state.sidebarOpen;
     $('sidebar').classList.toggle('hidden', !state.sidebarOpen);
     $('users-btn').classList.toggle('active', state.sidebarOpen);
+    updateOverlay();
+}
+
+function closeSidebars() {
+    // Close user sidebar
+    if (state.sidebarOpen) {
+        state.sidebarOpen = false;
+        $('sidebar').classList.add('hidden');
+        $('users-btn').classList.remove('active');
+    }
+    // Close IRC sidebar
+    if (state.irc.sidebarOpen) {
+        state.irc.sidebarOpen = false;
+        $('irc-sidebar').classList.add('collapsed');
+        $('irc-toggle').classList.remove('active');
+    }
+    updateOverlay();
+}
+
+function updateOverlay() {
+    // Show overlay on mobile when either sidebar is open
+    const isMobile = window.innerWidth <= 768;
+    const anySidebarOpen = state.sidebarOpen || state.irc.sidebarOpen;
+    $('sidebar-overlay').classList.toggle('hidden', !(isMobile && anySidebarOpen));
 }
 
 function send(data) {
@@ -910,9 +950,18 @@ function escapeHtml(text) {
     return d.innerHTML;
 }
 
-window.onbeforeunload = () => {
+function handlePageLeave() {
     // Disconnect from IRC
     disconnectIrc();
+    
+    // Send leave message to server for immediate cleanup
+    if (state.ws?.readyState === WebSocket.OPEN) {
+        try {
+            state.ws.send(JSON.stringify({ type: 'leave' }));
+        } catch (e) {
+            // Ignore errors during unload
+        }
+    }
     
     if (state.localAudioContext) state.localAudioContext.close();
     state.localStream?.getTracks().forEach(t => t.stop());
@@ -921,4 +970,8 @@ window.onbeforeunload = () => {
         p.pc.close();
     });
     state.ws?.close();
-};
+}
+
+// Use both events for better cross-browser/mobile support
+window.onbeforeunload = handlePageLeave;
+window.addEventListener('pagehide', handlePageLeave);

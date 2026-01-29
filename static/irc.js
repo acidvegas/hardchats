@@ -73,6 +73,7 @@ function initIrcListeners() {
     $('irc-send').addEventListener('click', sendIrcMessage);
     $('irc-connect').addEventListener('click', handleIrcConnect);
     $('irc-disconnect').addEventListener('click', handleIrcDisconnect);
+    $('irc-close').addEventListener('click', toggleIrcSidebar);
 }
 
 function updateCharCount() {
@@ -102,6 +103,11 @@ function toggleIrcSidebar() {
             $('irc-input').focus();
         }
         scrollIrcToBottom();
+    }
+    
+    // Update overlay for mobile
+    if (typeof updateOverlay === 'function') {
+        updateOverlay();
     }
 }
 
