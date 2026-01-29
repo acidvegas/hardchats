@@ -1066,6 +1066,133 @@ body {
     color: var(--text-primary);
 }
 
+/* ========== SETTINGS MODAL ========== */
+.settings-modal {
+    max-width: 380px;
+}
+
+.settings-modal .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.25rem;
+}
+
+.settings-modal .modal-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+}
+
+.modal-close-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    border: none;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.modal-close-btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+.modal-close-btn:hover {
+    background: var(--danger);
+    color: white;
+}
+
+.settings-group {
+    margin-bottom: 1rem;
+}
+
+.settings-group label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
+
+.settings-group label svg {
+    width: 18px;
+    height: 18px;
+    color: var(--acid);
+}
+
+.settings-group select {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    font-family: inherit;
+    outline: none;
+    cursor: pointer;
+    transition: border-color 0.2s ease;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 1rem center;
+    padding-right: 2.5rem;
+}
+
+.settings-group select:focus {
+    border-color: var(--acid);
+}
+
+.settings-group select option {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.settings-preview {
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    aspect-ratio: 16 / 9;
+    margin-bottom: 1rem;
+    overflow: hidden;
+    position: relative;
+}
+
+.settings-preview video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.settings-preview video.hidden {
+    display: none;
+}
+
+#settings-preview-placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+#settings-preview-placeholder.hidden {
+    display: none;
+}
+
+.settings-modal .btn-primary {
+    width: 100%;
+}
+
 /* ========== SCROLLBARS ========== */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

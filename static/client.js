@@ -734,7 +734,15 @@ function updateUsersList() {
                         ${user.speaking ? '<svg class="indicator mic-active" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>' : ''}
                     </div>
                 </div>
-                ${user.isLocal ? '' : `
+                ${user.isLocal ? `
+                <div class="user-controls">
+                    <button class="user-control-btn" onclick="openSettings(event)" title="Device Settings">
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+                        </svg>
+                    </button>
+                </div>
+                ` : `
                 <div class="user-controls">
                     <button class="user-control-btn ${isMuted ? 'active' : ''}" onclick="showVolumePopup('${user.id}', event)" title="Adjust Volume (${volume}%)">
                         <svg viewBox="0 0 24 24" fill="currentColor">
@@ -870,14 +878,26 @@ async function toggleCam() {
             return;
         }
     } else {
+        // Stop and remove video tracks
         state.localStream.getVideoTracks().forEach(track => {
             track.stop();
             state.localStream.removeTrack(track);
-            for (const peer of Object.values(state.peers)) {
-                const sender = peer.pc.getSenders().find(s => s.track === track);
-                if (sender) peer.pc.removeTrack(sender);
-            }
         });
+        
+        // Remove video senders and renegotiate with each peer
+        for (const [peerId, peer] of Object.entries(state.peers)) {
+            const videoSenders = peer.pc.getSenders().filter(s => s.track && s.track.kind === 'video');
+            videoSenders.forEach(sender => peer.pc.removeTrack(sender));
+            
+            // Renegotiate to inform peer that video is gone
+            try {
+                const offer = await peer.pc.createOffer();
+                await peer.pc.setLocalDescription(offer);
+                send({ type: 'offer', target: peerId, sdp: offer.sdp });
+            } catch (e) {
+                console.error(`[WebRTC] Failed to renegotiate with ${peerId}:`, e);
+            }
+        }
         
         state.camEnabled = false;
         state.users['local'].camOn = false;
@@ -975,3 +995,240 @@ function handlePageLeave() {
 // Use both events for better cross-browser/mobile support
 window.onbeforeunload = handlePageLeave;
 window.addEventListener('pagehide', handlePageLeave);
+
+// ========== SETTINGS MODAL ==========
+let settingsPreviewStream = null;
+let selectedMicId = null;
+let selectedCamId = null;
+
+window.openSettings = async function(event) {
+    event.stopPropagation();
+    
+    const modal = $('settings-modal');
+    const micSelect = $('mic-select');
+    const camSelect = $('cam-select');
+    
+    // Get current device IDs
+    const currentAudioTrack = state.localStream?.getAudioTracks()[0];
+    const currentVideoTrack = state.localStream?.getVideoTracks()[0];
+    
+    selectedMicId = currentAudioTrack?.getSettings()?.deviceId || null;
+    selectedCamId = currentVideoTrack?.getSettings()?.deviceId || null;
+    
+    // Enumerate devices
+    try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        
+        // Populate microphone select
+        micSelect.innerHTML = '';
+        const audioDevices = devices.filter(d => d.kind === 'audioinput');
+        audioDevices.forEach(device => {
+            const option = document.createElement('option');
+            option.value = device.deviceId;
+            option.textContent = device.label || `Microphone ${micSelect.options.length + 1}`;
+            if (device.deviceId === selectedMicId) option.selected = true;
+            micSelect.appendChild(option);
+        });
+        
+        // Populate camera select
+        camSelect.innerHTML = '<option value="">No camera</option>';
+        const videoDevices = devices.filter(d => d.kind === 'videoinput');
+        videoDevices.forEach(device => {
+            const option = document.createElement('option');
+            option.value = device.deviceId;
+            option.textContent = device.label || `Camera ${camSelect.options.length}`;
+            if (device.deviceId === selectedCamId) option.selected = true;
+            camSelect.appendChild(option);
+        });
+        
+        // Update preview when camera selection changes
+        camSelect.onchange = () => updateSettingsPreview();
+        
+        // Show preview for current camera
+        await updateSettingsPreview();
+        
+    } catch (e) {
+        console.error('[Settings] Failed to enumerate devices:', e);
+    }
+    
+    modal.classList.remove('hidden');
+};
+
+async function updateSettingsPreview() {
+    const camSelect = $('cam-select');
+    const previewVideo = $('settings-preview-video');
+    const placeholder = $('settings-preview-placeholder');
+    
+    // Stop existing preview stream
+    if (settingsPreviewStream) {
+        settingsPreviewStream.getTracks().forEach(t => t.stop());
+        settingsPreviewStream = null;
+    }
+    
+    const deviceId = camSelect.value;
+    
+    if (!deviceId) {
+        previewVideo.classList.add('hidden');
+        placeholder.classList.remove('hidden');
+        placeholder.textContent = 'No camera selected';
+        return;
+    }
+    
+    try {
+        settingsPreviewStream = await navigator.mediaDevices.getUserMedia({
+            video: { deviceId: { exact: deviceId }, width: { ideal: 640 }, height: { ideal: 360 } }
+        });
+        
+        previewVideo.srcObject = settingsPreviewStream;
+        previewVideo.classList.remove('hidden');
+        placeholder.classList.add('hidden');
+        
+    } catch (e) {
+        console.error('[Settings] Preview failed:', e);
+        previewVideo.classList.add('hidden');
+        placeholder.classList.remove('hidden');
+        placeholder.textContent = 'Camera unavailable';
+    }
+}
+
+function closeSettings() {
+    const modal = $('settings-modal');
+    modal.classList.add('hidden');
+    
+    // Stop preview stream
+    if (settingsPreviewStream) {
+        settingsPreviewStream.getTracks().forEach(t => t.stop());
+        settingsPreviewStream = null;
+    }
+}
+
+async function applySettings() {
+    const micSelect = $('mic-select');
+    const camSelect = $('cam-select');
+    
+    const newMicId = micSelect.value;
+    const newCamId = camSelect.value;
+    
+    // Switch microphone if changed
+    if (newMicId && newMicId !== selectedMicId) {
+        try {
+            const newAudioStream = await navigator.mediaDevices.getUserMedia({
+                audio: { deviceId: { exact: newMicId } }
+            });
+            const newAudioTrack = newAudioStream.getAudioTracks()[0];
+            
+            // Replace in local stream
+            const oldAudioTrack = state.localStream.getAudioTracks()[0];
+            if (oldAudioTrack) {
+                oldAudioTrack.stop();
+                state.localStream.removeTrack(oldAudioTrack);
+            }
+            state.localStream.addTrack(newAudioTrack);
+            
+            // Apply mute state
+            newAudioTrack.enabled = state.micEnabled;
+            
+            // Replace in all peer connections
+            for (const peer of Object.values(state.peers)) {
+                const sender = peer.pc.getSenders().find(s => s.track && s.track.kind === 'audio');
+                if (sender) {
+                    await sender.replaceTrack(newAudioTrack);
+                }
+            }
+            
+            // Recreate local audio analyser
+            if (state.localAudioContext) {
+                state.localAudioContext.close();
+            }
+            setupLocalAudioAnalyser();
+            
+            console.log('[Settings] Microphone switched');
+        } catch (e) {
+            console.error('[Settings] Failed to switch microphone:', e);
+            alert('Failed to switch microphone: ' + e.message);
+        }
+    }
+    
+    // Switch camera if changed
+    const currentVideoTrack = state.localStream?.getVideoTracks()[0];
+    const currentCamId = currentVideoTrack?.getSettings()?.deviceId || '';
+    
+    if (newCamId !== currentCamId) {
+        if (newCamId) {
+            // Want camera on with new device
+            try {
+                // Stop old video track if any
+                if (currentVideoTrack) {
+                    currentVideoTrack.stop();
+                    state.localStream.removeTrack(currentVideoTrack);
+                }
+                
+                const newVideoStream = await navigator.mediaDevices.getUserMedia({
+                    video: { deviceId: { exact: newCamId }, width: { ideal: 1280 }, height: { ideal: 720 } }
+                });
+                const newVideoTrack = newVideoStream.getVideoTracks()[0];
+                state.localStream.addTrack(newVideoTrack);
+                
+                // Replace or add in all peer connections
+                for (const [peerId, peer] of Object.entries(state.peers)) {
+                    const sender = peer.pc.getSenders().find(s => s.track && s.track.kind === 'video');
+                    if (sender) {
+                        await sender.replaceTrack(newVideoTrack);
+                    } else {
+                        peer.pc.addTrack(newVideoTrack, state.localStream);
+                        // Renegotiate
+                        const offer = await peer.pc.createOffer();
+                        await peer.pc.setLocalDescription(offer);
+                        send({ type: 'offer', target: peerId, sdp: offer.sdp });
+                    }
+                }
+                
+                if (!state.camEnabled) {
+                    state.camEnabled = true;
+                    state.users['local'].camOn = true;
+                    send({ type: 'camera_status', enabled: true });
+                    $('cam-btn').classList.add('active');
+                }
+                
+                console.log('[Settings] Camera switched');
+            } catch (e) {
+                console.error('[Settings] Failed to switch camera:', e);
+                alert('Failed to switch camera: ' + e.message);
+            }
+        } else if (currentVideoTrack) {
+            // Want camera off
+            currentVideoTrack.stop();
+            state.localStream.removeTrack(currentVideoTrack);
+            
+            for (const [peerId, peer] of Object.entries(state.peers)) {
+                const sender = peer.pc.getSenders().find(s => s.track && s.track.kind === 'video');
+                if (sender) {
+                    peer.pc.removeTrack(sender);
+                    // Renegotiate
+                    const offer = await peer.pc.createOffer();
+                    await peer.pc.setLocalDescription(offer);
+                    send({ type: 'offer', target: peerId, sdp: offer.sdp });
+                }
+            }
+            
+            state.camEnabled = false;
+            state.users['local'].camOn = false;
+            send({ type: 'camera_status', enabled: false });
+            $('cam-btn').classList.remove('active');
+        }
+    }
+    
+    updateUI();
+    closeSettings();
+}
+
+// Settings modal event listeners
+document.addEventListener('DOMContentLoaded', () => {
+    $('settings-close')?.addEventListener('click', closeSettings);
+    $('settings-apply')?.addEventListener('click', applySettings);
+    
+    // Close modal when clicking outside
+    $('settings-modal')?.addEventListener('click', (e) => {
+        if (e.target.id === 'settings-modal') closeSettings();
+    });
+});
