@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # HARDCHATS WebRTC Voice/Video Server - Developed by acidvegas (https://github.com/acidvegas/hardchats)
+# hardchats/config.py
 
 # Version
 VERSION = '1.0.0'

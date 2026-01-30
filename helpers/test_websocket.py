@@ -4,13 +4,19 @@
 
 import asyncio
 import ssl
-import websockets
+
+try:
+	import websockets
+except ImportError:
+	raise SystemExit('missing websockets library (pip install websockets)')
+
 
 IRC_SERVER = 'wss://irc.supernets.org:7000'
 NICK       = 'WSTest123'
 USER       = 'hardchatter'
 REALNAME   = 'https://dev.hardchats.com/'
 CHANNEL    = '#hardchats'
+
 
 async def test_irc():
 	# Create SSL context (allows self-signed certs for testing)

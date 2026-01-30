@@ -1,5 +1,6 @@
 # HARDCHATS WebRTC Voice/Video Server - Developed by acidvegas (https://github.com/acidvegas/hardchats)
 # hardchats/requirements.txt
 
-aiohttp>=3.9.0
-websockets>=11.0.0
+aiohttp
+apv
+websockets

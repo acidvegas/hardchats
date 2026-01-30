@@ -2,89 +2,152 @@
 # HARDCHATS WebRTC Voice/Video Server - Developed by acidvegas (https://github.com/acidvegas/hardchats)
 # hardchats/server.py
 
+import logging
 import random
-import re
 import time
+import string
 import uuid
-from aiohttp import web
+
+try:
+	from aiohttp import web
+except ImportError:
+	raise SystemExit('missing aiohttp library (pip install aiohttp)')
+
+try:
+	import apv
+except ImportError:
+	raise SystemExit('missing apv library (pip install apv)')
 
 import config
 
-clients = {}  # client_id -> {ws, username, cam_on}
-captchas = {}  # captcha_id -> {answer, expires}
+
+# Globals
+clients       = {}  # client_id -> {ws, username, cam_on}
+captchas      = {}  # captcha_id -> {answer, expires}
 session_start = None
 
-USERNAME_REGEX = re.compile(r'^[\x20-\x7E]{1,20}$')
+ALLOWED_CHARS  = string.ascii_letters + string.digits
 
 
 def generate_captcha():
-	a = random.randint(1, 20)
-	b = random.randint(1, 20)
+	'''Generate a random captcha question and answer'''
+
+	# Generate random numbers and operator
+	a  = random.randint(1, 20)
+	b  = random.randint(1, 20)
 	op = random.choice(['+', '-', '*'])
 
+	# Calculate answer and question based on operator
 	if op == '+':
-		answer = a + b
+		answer   = a + b
 		question = f'{a} + {b}'
 	elif op == '-':
 		if a < b: a, b = b, a
-		answer = a - b
+		answer   = a - b
 		question = f'{a} - {b}'
 	else:
-		a, b = random.randint(1, 10), random.randint(1, 10)
-		answer = a * b
+		a, b     = random.randint(1, 10), random.randint(1, 10)
+		answer   = a * b
 		question = f'{a} × {b}'
 
-	captcha_id = str(uuid.uuid4())[:8]
+	# Generate captcha ID and store in captchas dictionary
+	captcha_id           = str(uuid.uuid4())[:8]
 	captchas[captcha_id] = {'answer': answer, 'expires': time.time() + 300}
+
 	return captcha_id, question
 
 
-def verify_captcha(captcha_id, user_answer):
+def verify_captcha(captcha_id: str, user_answer: str) -> bool:
+	'''
+	Verify if the user's answer is correct for the given captcha ID
+
+	:param captcha_id: The ID of the captcha to verify
+	:param user_answer: The user's answer to the captcha
+	'''
+
+	# Check if captcha ID is in captchas dictionary
 	if captcha_id not in captchas:
 		return False
 
+	# Get captcha from dictionary
 	captcha = captchas[captcha_id]
+
+	# Check if captcha has expired
 	if time.time() > captcha['expires']:
 		del captchas[captcha_id]
 		return False
 
+	# Try to convert user answer to integer and compare to captcha answer
 	try:
 		if int(user_answer) == captcha['answer']:
 			del captchas[captcha_id]
 			return True
 	except:
 		pass
+
 	return False
 
 
 def cleanup_captchas():
+	'''Cleanup expired captchas'''
+
+	# Get current time
 	now = time.time()
+
+	# Get expired captchas
 	expired = [k for k, v in captchas.items() if now > v['expires']]
+
+	# Delete expired captchas
 	for k in expired:
 		del captchas[k]
 
 
-def get_camera_count():
+def get_camera_count() -> int:
+	'''Get the number of cameras currently on'''
+
 	return sum(1 for c in clients.values() if c.get('cam_on', False))
 
 
-async def index(request):
+async def index(request: web.Request) -> web.Response:
+	'''Serve the index.html file'''
+
 	with open('static/index.html', 'r') as f:
 		return web.Response(text=f.read(), content_type='text/html')
 
 
-async def get_captcha(request):
+async def get_captcha(request: web.Request) -> web.Response:
+	'''
+	Generate a new captcha
+	
+	:param request: The request object
+	'''
+
+	# Cleanup expired captchas
 	cleanup_captchas()
+
+	# Generate a new captcha
 	captcha_id, question = generate_captcha()
+
 	return web.json_response({'id': captcha_id, 'question': question})
 
 
-async def get_config(request):
-	'''Serve client configuration'''
+async def get_config(request: web.Request) -> web.Response:
+	'''
+	Serve client configuration
+	
+	:param request: The request object
+	'''
+
 	return web.json_response(config.get_client_config())
 
 
-async def websocket_handler(request):
+async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
+	'''
+	Handle WebSocket connections
+	
+	:param request: The request object
+	'''
+
 	global session_start
 
 	# Heartbeat of 10 seconds - if client doesn't respond to ping within 10s, connection is closed
@@ -94,7 +157,7 @@ async def websocket_handler(request):
 	client_id = str(uuid.uuid4())[:8]
 	clients[client_id] = {'ws': ws, 'username': None, 'cam_on': False}
 
-	print(f'[{client_id}] Connected')
+	logging.info(f'[{client_id}] Connected')
 
 	try:
 		async for msg in ws:
@@ -102,16 +165,23 @@ async def websocket_handler(request):
 				data = __import__('json').loads(msg.data)
 				await handle_message(client_id, data)
 			elif msg.type == web.WSMsgType.ERROR:
-				print(f'[{client_id}] Error: {ws.exception()}')
+				logging.error(f'[{client_id}] Error: {ws.exception()}')
 	except Exception as e:
-		print(f'[{client_id}] Exception: {e}')
+		logging.error(f'[{client_id}] Exception: {e}')
 	finally:
 		await cleanup(client_id)
 
 	return ws
 
 
-async def handle_message(client_id, data):
+async def handle_message(client_id: str, data: dict):
+	'''
+	Handle messages from the client
+	
+	:param client_id: The ID of the client
+	:param data: The data from the client
+	'''
+
 	global session_start
 	msg_type = data.get('type')
 
@@ -121,7 +191,7 @@ async def handle_message(client_id, data):
 			return
 
 		username = data.get('username', '').strip()
-		if not USERNAME_REGEX.match(username):
+		if not all(c in ALLOWED_CHARS for c in username) or len(username) > 20:
 			await clients[client_id]['ws'].send_json({'type': 'error', 'message': 'Invalid username. Use 1-20 printable characters.'})
 			return
 
@@ -141,7 +211,7 @@ async def handle_message(client_id, data):
 		if session_start is None:
 			session_start = time.time()
 
-		print(f'[{client_id}] Joined as {username}')
+		logging.info(f'[{client_id}] Joined as {username}')
 
 		users = [
 			{'id': cid, 'username': c['username'], 'cam_on': c.get('cam_on', False)}
@@ -150,28 +220,28 @@ async def handle_message(client_id, data):
 		]
 
 		await clients[client_id]['ws'].send_json({
-			'type': 'users',
-			'users': users,
-			'you': client_id,
-			'session_start': session_start,
-			'max_cameras': config.MAX_CAMERAS
+			'type'          : 'users',
+			'users'         : users,
+			'you'           : client_id,
+			'session_start' : session_start,
+			'max_cameras'   : config.MAX_CAMERAS
 		})
 
 		await broadcast(client_id, {
-			'type': 'user_joined',
-			'id': client_id,
-			'username': username
+			'type'     : 'user_joined',
+			'id'       : client_id,
+			'username' : username
 		})
 
 	elif msg_type in ('offer', 'answer', 'candidate'):
 		target = data.get('target')
 		if target and target in clients and clients[target]['username']:
 			await clients[target]['ws'].send_json({
-				'type': msg_type,
-				'from': client_id,
-				'username': clients[client_id]['username'],
-				'sdp': data.get('sdp'),
-				'candidate': data.get('candidate')
+				'type'      : msg_type,
+				'from'      : client_id,
+				'username'  : clients[client_id]['username'],
+				'sdp'       : data.get('sdp'),
+				'candidate' : data.get('candidate')
 			})
 
 	elif msg_type == 'camera_status':
@@ -179,8 +249,8 @@ async def handle_message(client_id, data):
 
 		if enabled and get_camera_count() >= config.MAX_CAMERAS:
 			await clients[client_id]['ws'].send_json({
-				'type': 'error',
-				'message': f'Maximum cameras ({config.MAX_CAMERAS}) reached'
+				'type'    : 'error',
+				'message' : f'Maximum cameras ({config.MAX_CAMERAS}) reached'
 			})
 			return
 
@@ -188,9 +258,9 @@ async def handle_message(client_id, data):
 
 		# Broadcast to ALL users including sender
 		await broadcast_all({
-			'type': 'camera_status',
-			'id': client_id,
-			'enabled': enabled
+			'type'    : 'camera_status',
+			'id'      : client_id,
+			'enabled' : enabled
 		})
 
 	elif msg_type == 'leave':
@@ -198,8 +268,15 @@ async def handle_message(client_id, data):
 		await cleanup(client_id)
 
 
-async def broadcast(sender_id, message):
-	'''Send to all except sender'''
+async def broadcast(sender_id: str, message: dict):
+	'''
+	Send to all except sender
+	
+	:param sender_id: The ID of the sender
+	:param message: The message to send
+	'''
+
+	# Send to all except sender
 	for cid, client in list(clients.items()):
 		if cid != sender_id and client['ws'] and not client['ws'].closed and client['username']:
 			try:
@@ -208,8 +285,14 @@ async def broadcast(sender_id, message):
 				pass
 
 
-async def broadcast_all(message):
-	'''Send to all including sender'''
+async def broadcast_all(message: dict):
+	'''
+	Send to all including sender
+	
+	:param message: The message to send
+	'''
+
+	# Send to all including sender
 	for cid, client in list(clients.items()):
 		if client['ws'] and not client['ws'].closed and client['username']:
 			try:
@@ -218,7 +301,13 @@ async def broadcast_all(message):
 				pass
 
 
-async def cleanup(client_id):
+async def cleanup(client_id: str):
+	'''
+	Cleanup a client
+	
+	:param client_id: The ID of the client
+	'''
+
 	global session_start
 
 	if client_id not in clients:
@@ -232,26 +321,45 @@ async def cleanup(client_id):
 	if active_users == 0:
 		session_start = None
 
-	print(f'[{client_id}] Disconnected: {username} ({active_users} users)')
+	logging.info(f'[{client_id}] Disconnected: {username} ({active_users} users)')
 
 	if username:
 		await broadcast_all({
-			'type': 'user_left',
-			'id': client_id
+			'type' : 'user_left',
+			'id'   : client_id
 		})
 
 
 async def init_app():
+	'''Initialize the application'''
+
+	# Create the application
 	app = web.Application()
+
+	# Add routes
 	app.router.add_get('/', index)
 	app.router.add_get('/ws', websocket_handler)
 	app.router.add_get('/api/captcha', get_captcha)
 	app.router.add_get('/api/config', get_config)
 	app.router.add_static('/static/', 'static')
+
 	return app
 
 
 if __name__ == '__main__':
-	print(f'Starting HardChats v{config.VERSION} on http://{config.SERVER_HOST}:{config.SERVER_PORT}')
-	print(f'Max users: {config.MAX_USERS}, Max cameras: {config.MAX_CAMERAS}')
+	import argparse
+
+	# Parse command line arguments
+	parser = argparse.ArgumentParser()
+	parser.add_argument('-d', '--debug', action='store_true', help='Enable debug logging')
+	args = parser.parse_args()
+
+	# Setup logging
+	if args.debug:
+		apv.setup_logging(level='DEBUG', log_to_disk=True, max_log_size=5*1024*1024, max_backups=3, compress_backups=True, log_file_name='havoc', show_details=True)
+		logging.debug('Debug logging enabled')
+	else:
+		apv.setup_logging(level='INFO', json_log=True, syslog=True)
+
+	# Run the application
 	web.run_app(init_app(), host=config.SERVER_HOST, port=config.SERVER_PORT)
