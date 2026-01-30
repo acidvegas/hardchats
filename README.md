@@ -93,6 +93,7 @@ loadmodule "websocket_common";
 - [ ] IRC bot for admin management
 - [ ] Mute icon indicator next to their name in the users list to signify they are muted
 - [ ] Truncate cameras to squares to fix better, show full camera in maximized mode.
+- [ ] IRC channel +H history loading on connection
 
 ###### Bugs
 - [ ] ⚠️ Does not properly detect when a client quits so the cam gets frozen and the user remains in the user list still.
@@ -104,6 +105,7 @@ loadmodule "websocket_common";
 - [ ] Custom sounds for JOIN/QUIT/CHAT are not playing
 - [ ] Anyone can lockdown the chat pretty easily by opening 25 connections so no one can join.
 - [ ] Strange bug observed on Vandium on GrapheneOS mobile, I was unable to hear one specific person who joined after me. Rejoining fixed the issue, but my desktop thatw as connected the whole time didn't suffer from this issue.
+- [ ] Javascript console in Firefox reports `WebRTC: ICE failed, see about:webrtc for more details`
 
 ###### Touchups
 - [ ] Cleaner IRC chat *(hide server notices and redundant content)*

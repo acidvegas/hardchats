@@ -22,8 +22,8 @@ import config
 
 
 # Globals
-clients       = {}  # client_id -> {ws, username, cam_on}
-captchas      = {}  # captcha_id -> {answer, expires}
+clients       = {} # client_id -> {ws, username, cam_on}
+captchas      = {} # captcha_id -> {answer, expires}
 session_start = None
 
 ALLOWED_CHARS  = string.ascii_letters + string.digits
