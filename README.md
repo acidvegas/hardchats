@@ -95,14 +95,13 @@ loadmodule "websocket_common";
 - [ ] Truncate cameras to squares to fix better, show full camera in maximized mode.
 
 ###### Bugs
+- [ ] ⚠️ Does not properly detect when a client quits so the cam gets frozen and the user remains in the user list still.
+- [ ] ⚠️ IRC connection Chrome-based browsers not working *(Tested via Vandium browser on GrapheneOS and Chromium on Linux/Windows)*
 - [ ] Mobile users when they have someone maximized should see a horizontally scrolling list on the bottom of other cameras still, like how desktop mode does it.
 - [ ] Mobile users need to be able to scroll all the video shares, they cant all fit on the screen.
 - [ ] Mobile users personal camera is frozen in a group
 - [ ] Browser noticiations for JOIN, QUIT, & CHAT is not working.
 - [ ] Custom sounds for JOIN/QUIT/CHAT are not playing
-- [ ] IRC connection Chrome-based browsers not working *(Tested via Vandium browser on GrapheneOS and Chromium on Linux/Windows)*
-	- This might be because we have closed ports on some SuperNETs nodes I need to open still for websockets...
-- [ ] Does not properly detect when a client quits so the cam gets frozen and the user remains in the user list still.
 - [ ] Anyone can lockdown the chat pretty easily by opening 25 connections so no one can join.
 - [ ] Strange bug observed on Vandium on GrapheneOS mobile, I was unable to hear one specific person who joined after me. Rejoining fixed the issue, but my desktop thatw as connected the whole time didn't suffer from this issue.
 
