@@ -91,6 +91,7 @@ loadmodule "websocket_common";
 - [ ] Drag to resize the width of the chat & user list.
 - [ ] API for basic metrics and information about the chat.
 - [ ] IRC bot for admin management
+- [ ] Mute icon indicator next to their name in the users list to signify they are muted
 
 ###### Bugs
 - [ ] Mobile users need to be able to scroll all the video shares, they cant all fit on the screen.
@@ -101,6 +102,7 @@ loadmodule "websocket_common";
 	- This might be because we have closed ports on some SuperNETs nodes I need to open still for websockets...
 - [ ] Does not properly detect when a client quits so the cam gets frozen and the user remains in the user list still.
 - [ ] Anyone can lockdown the chat pretty easily by opening 25 connections so no one can join.
+- [ ] Strange bug observed on Vandium on GrapheneOS mobile, I was unable to hear one specific person who joined after me. Rejoining fixed the issue, but my desktop thatw as connected the whole time didn't suffer from this issue.
 
 ###### Touchups
 - [ ] Cleaner IRC chat *(hide server notices and redundant content)*
@@ -111,6 +113,7 @@ loadmodule "websocket_common";
 ###### Fancy Pipe Dreams
 - [ ] Milkdrop animations from the audio
 - [ ] Multiple room support + lobby system
+- [ ] Scripting engine for Python to make this extentible like WeeChat & irssi
 
 ## Contribute
 Come join us on `irc.supernets.org` in `#hardchats` for testing, feedback, & collaboration!
