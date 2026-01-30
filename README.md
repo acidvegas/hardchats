@@ -93,6 +93,7 @@ loadmodule "websocket_common";
 - [ ] IRC bot for admin management
 
 ###### Bugs
+- [ ] Mobile users need to be able to scroll all the video shares, they cant all fit on the screen.
 - [ ] Browser noticiations for JOIN, QUIT, & CHAT is not working.
 - [ ] Custom sounds for JOIN/QUIT/CHAT are not playing
 - [ ] IRC connection Chrome-based browsers not working *(Tested via Vandium browser on GrapheneOS and Chromium on Linux/Windows)*
