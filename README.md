@@ -92,8 +92,10 @@ loadmodule "websocket_common";
 - [ ] API for basic metrics and information about the chat.
 - [ ] IRC bot for admin management
 - [ ] Mute icon indicator next to their name in the users list to signify they are muted
+- [ ] Truncate cameras to squares to fix better, show full camera in maximized mode.
 
 ###### Bugs
+- [ ] Mobile users when they have someone maximized should see a horizontally scrolling list on the bottom of other cameras still, like how desktop mode does it.
 - [ ] Mobile users need to be able to scroll all the video shares, they cant all fit on the screen.
 - [ ] Mobile users personal camera is frozen in a group
 - [ ] Browser noticiations for JOIN, QUIT, & CHAT is not working.
