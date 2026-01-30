@@ -99,19 +99,23 @@ loadmodule "websocket_common";
 - [ ] ⚠️ Does not properly detect when a client quits so the cam gets frozen and the user remains in the user list still.
 - [ ] ⚠️ IRC connection Chrome-based browsers not working *(Tested via Vandium browser on GrapheneOS and Chromium on Linux/Windows)*
 - [ ] Mobile users when they have someone maximized should see a horizontally scrolling list on the bottom of other cameras still, like how desktop mode does it.
-- [ ] Mobile users need to be able to scroll all the video shares, they cant all fit on the screen.
+- [ ] Mobile users need to be able to scroll all the video shares in tile mode, they cant all fit on the screen when many people are on camera.
 - [ ] Mobile users personal camera is frozen in a group
 - [ ] Browser noticiations for JOIN, QUIT, & CHAT is not working.
 - [ ] Custom sounds for JOIN/QUIT/CHAT are not playing
 - [ ] Anyone can lockdown the chat pretty easily by opening 25 connections so no one can join.
 - [ ] Strange bug observed on Vandium on GrapheneOS mobile, I was unable to hear one specific person who joined after me. Rejoining fixed the issue, but my desktop thatw as connected the whole time didn't suffer from this issue.
 - [ ] Javascript console in Firefox reports `WebRTC: ICE failed, see about:webrtc for more details`
+- [ ] When you try to click something in the users menu, if someone speaks and hilights their name, it hijacks the click in the users menu *(reported by bombuzal)*
 
 ###### Touchups
 - [ ] Cleaner IRC chat *(hide server notices and redundant content)*
 - [ ] Better captcha system to prevent bot abuse
 - [ ] Show total users online on the home page to see
 - [ ] No script notice on home page if Javascript is disabled
+- [ ] Muting other people / turning fof their vdieo cuts the stream entirely to save bandwidth
+- [ ] ABC order for users list
+- [ ] Throttle camera on and off to prevent probe spam *(reported by incog)*
 
 ###### Fancy Pipe Dreams
 - [ ] Milkdrop animations from the audio
