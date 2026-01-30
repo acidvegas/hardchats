@@ -1193,6 +1193,75 @@ body {
     width: 100%;
 }
 
+.settings-section {
+    margin-bottom: 1.25rem;
+}
+
+.settings-section h4 {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.settings-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.625rem 0;
+}
+
+.settings-toggle label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.settings-toggle label svg {
+    width: 18px;
+    height: 18px;
+    color: var(--text-secondary);
+}
+
+.toggle-btn {
+    position: relative;
+    width: 44px;
+    height: 24px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.toggle-btn .toggle-slider {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 18px;
+    height: 18px;
+    background: var(--text-muted);
+    border-radius: 50%;
+    transition: all 0.2s ease;
+}
+
+.toggle-btn[data-enabled="true"] {
+    background: var(--acid);
+    border-color: var(--acid);
+}
+
+.toggle-btn[data-enabled="true"] .toggle-slider {
+    left: 22px;
+    background: var(--bg-primary);
+}
+
 /* ========== SCROLLBARS ========== */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -1210,7 +1279,7 @@ body {
         position: fixed;
         top: 0;
         left: 0;
-        bottom: 0;
+        bottom: 28px; /* Account for footer */
         z-index: 100;
         width: 85%;
         max-width: 320px;
@@ -1233,7 +1302,7 @@ body {
         position: fixed;
         top: 0;
         right: 0;
-        bottom: 0;
+        bottom: 28px; /* Account for footer */
         z-index: 100;
         max-width: 320px;
         transform: translateX(100%);

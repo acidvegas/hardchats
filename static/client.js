@@ -17,6 +17,12 @@ const state = {
     sessionStart: null,
     maxCameras: 10,
     configLoaded: false,
+    // Settings
+    settings: {
+        notifications: true,
+        sounds: true,
+        lowBandwidth: false
+    },
     // IRC state
     irc: {
         ws: null,
@@ -28,11 +34,36 @@ const state = {
     }
 };
 
+// Load settings from localStorage
+function loadSettings() {
+    try {
+        const saved = localStorage.getItem('hardchats_settings');
+        if (saved) {
+            const parsed = JSON.parse(saved);
+            Object.assign(state.settings, parsed);
+        }
+    } catch (e) {
+        console.error('[Settings] Failed to load:', e);
+    }
+}
+
+// Save settings to localStorage
+function saveSettings() {
+    try {
+        localStorage.setItem('hardchats_settings', JSON.stringify(state.settings));
+    } catch (e) {
+        console.error('[Settings] Failed to save:', e);
+    }
+}
+
 const USERNAME_REGEX = /^[\x20-\x7E]{1,20}$/;
 
 const $ = (id) => document.getElementById(id);
 
 document.addEventListener('DOMContentLoaded', async () => {
+    // Load saved settings
+    loadSettings();
+    
     // Load configuration from server first
     await loadConfig();
     
@@ -230,9 +261,15 @@ function handleSignal(data) {
         case 'user_joined':
             state.users[data.id] = { username: data.username, camOn: false, speaking: false };
             updateUI();
+            
+            // Notification and sound
+            showNotification('HardChats', `${data.username} joined the room`, 'user-join');
+            playSound('join');
             break;
             
         case 'user_left':
+            const leftUsername = state.users[data.id]?.username || 'Someone';
+            
             // Immediately remove the user
             if (state.peers[data.id]) {
                 if (state.peers[data.id].audioContext) state.peers[data.id].audioContext.close();
@@ -246,6 +283,10 @@ function handleSignal(data) {
             }
             
             updateUI();
+            
+            // Notification and sound
+            showNotification('HardChats', `${leftUsername} left the room`, 'user-leave');
+            playSound('leave');
             break;
             
         case 'offer':
@@ -495,7 +536,18 @@ async function handleCandidate(peerId, candidate) {
 
 function setupAudioAnalyser(peerId, stream) {
     try {
+        // Close existing audio context if any
+        if (state.peers[peerId]?.audioContext) {
+            state.peers[peerId].audioContext.close();
+        }
+        
         const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // Resume audio context if suspended (browser autoplay policy)
+        if (audioContext.state === 'suspended') {
+            audioContext.resume();
+        }
+        
         const analyser = audioContext.createAnalyser();
         analyser.fftSize = 256;
         const source = audioContext.createMediaStreamSource(stream);
@@ -515,6 +567,7 @@ function setupAudioAnalyser(peerId, stream) {
         state.peers[peerId].audioContext = audioContext;
         state.peers[peerId].analyser = analyser;
         state.peers[peerId].gainNode = gainNode;
+        state.peers[peerId].audioSource = source;
         
         const dataArray = new Uint8Array(analyser.frequencyBinCount);
         
@@ -531,6 +584,8 @@ function setupAudioAnalyser(peerId, stream) {
             requestAnimationFrame(checkAudio);
         };
         checkAudio();
+        
+        console.log(`[Audio] Setup analyser for ${peerId}, context state: ${audioContext.state}`);
     } catch (e) {
         console.error('Audio analyser error:', e);
     }
@@ -813,10 +868,17 @@ function applyPeerVolume(peerId) {
     
     const vol = peer.volume ?? 100;
     
+    // Resume audio context if suspended
+    if (peer.audioContext && peer.audioContext.state === 'suspended') {
+        peer.audioContext.resume();
+    }
+    
     // Use GainNode for volume control (supports 0-150%)
     // Only apply if global volume is enabled
     if (peer.gainNode) {
-        peer.gainNode.gain.value = state.volumeEnabled ? (vol / 100) : 0;
+        const newGain = state.volumeEnabled ? (vol / 100) : 0;
+        peer.gainNode.gain.setValueAtTime(newGain, peer.audioContext?.currentTime || 0);
+        console.log(`[Audio] Set ${peerId} volume to ${vol}%, gain: ${newGain}`);
     }
     
     // Update muted state
@@ -830,7 +892,21 @@ document.addEventListener('click', (e) => {
         popup.classList.add('hidden');
         activeVolumePopup = null;
     }
+    
+    // Resume all audio contexts on user interaction (browser autoplay policy)
+    resumeAllAudioContexts();
 });
+
+// Resume all suspended audio contexts
+function resumeAllAudioContexts() {
+    Object.values(state.peers).forEach(peer => {
+        if (peer.audioContext && peer.audioContext.state === 'suspended') {
+            peer.audioContext.resume().then(() => {
+                console.log('[Audio] Context resumed after user interaction');
+            });
+        }
+    });
+}
 
 window.togglePeerVideo = function(peerId) {
     const peer = state.peers[peerId];
@@ -856,7 +932,7 @@ async function toggleCam() {
     if (!state.camEnabled) {
         try {
             const videoStream = await navigator.mediaDevices.getUserMedia({
-                video: { width: { ideal: 1280 }, height: { ideal: 720 } }
+                video: getVideoConstraints()
             });
             const videoTrack = videoStream.getVideoTracks()[0];
             state.localStream.addTrack(videoTrack);
@@ -915,6 +991,11 @@ function toggleVolume() {
     
     // Use GainNode for global mute/unmute
     Object.entries(state.peers).forEach(([peerId, peer]) => {
+        // Resume audio context if suspended
+        if (peer.audioContext && peer.audioContext.state === 'suspended') {
+            peer.audioContext.resume();
+        }
+        
         if (peer.gainNode) {
             if (state.volumeEnabled) {
                 // Restore to user's set volume
@@ -928,6 +1009,8 @@ function toggleVolume() {
     
     $('volume-btn').classList.toggle('active', state.volumeEnabled);
     $('volume-btn').classList.toggle('muted', !state.volumeEnabled);
+    
+    console.log(`[Audio] Global volume ${state.volumeEnabled ? 'enabled' : 'muted'}`);
 }
 
 function toggleSidebar() {
@@ -1007,6 +1090,9 @@ window.openSettings = async function(event) {
     const modal = $('settings-modal');
     const micSelect = $('mic-select');
     const camSelect = $('cam-select');
+    
+    // Update toggle states from saved settings
+    updateSettingsToggles();
     
     // Get current device IDs
     const currentAudioTrack = state.localStream?.getAudioTracks()[0];
@@ -1163,8 +1249,10 @@ async function applySettings() {
                     state.localStream.removeTrack(currentVideoTrack);
                 }
                 
+                const constraints = getVideoConstraints();
+                constraints.deviceId = { exact: newCamId };
                 const newVideoStream = await navigator.mediaDevices.getUserMedia({
-                    video: { deviceId: { exact: newCamId }, width: { ideal: 1280 }, height: { ideal: 720 } }
+                    video: constraints
                 });
                 const newVideoTrack = newVideoStream.getVideoTracks()[0];
                 state.localStream.addTrack(newVideoTrack);
@@ -1222,10 +1310,110 @@ async function applySettings() {
     closeSettings();
 }
 
+// ========== NOTIFICATIONS & SOUNDS ==========
+
+// Request notification permission
+async function requestNotificationPermission() {
+    if ('Notification' in window && Notification.permission === 'default') {
+        await Notification.requestPermission();
+    }
+}
+
+// Show browser notification
+function showNotification(title, body, tag = null) {
+    if (!state.settings.notifications) return;
+    if (!('Notification' in window)) return;
+    if (Notification.permission !== 'granted') return;
+    if (document.hasFocus()) return; // Don't show if tab is focused
+    
+    const options = {
+        body,
+        icon: '/static/favicon.ico',
+        badge: '/static/favicon.ico',
+        tag: tag || undefined,
+        renotify: !!tag
+    };
+    
+    try {
+        new Notification(title, options);
+    } catch (e) {
+        console.error('[Notification] Failed:', e);
+    }
+}
+
+// Play sound effect
+function playSound(type) {
+    if (!state.settings.sounds) return;
+    
+    const soundEl = $(`sound-${type}`);
+    if (!soundEl) return;
+    
+    // Set sound source (base64 encoded short sounds)
+    const sounds = {
+        join: 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYbpUKJIAAAAAAAAAAAAAAAAAAAA//tQZAAP8AAAaQAAAAgAAA0gAAABAAABpAAAACAAADSAAAAETEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//tQZB8P8AAAaQAAAAgAAA0gAAABAAABpAAAACAAADSAAAAEVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV',
+        leave: 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYbHFMJhAAAAAAAAAAAAAAAAAAAA//tQZAAP8AAAaQAAAAgAAA0gAAABAAABpAAAACAAADSAAAAETEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//tQZB8P8AAAaQAAAAgAAA0gAAABAAABpAAAACAAADSAAAAEVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV',
+        message: 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYaQyJJIAAAAAAAAAAAAAAAAAAAA//tQZAAP8AAAaQAAAAgAAA0gAAABAAABpAAAACAAADSAAAAETEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV//tQZB8P8AAAaQAAAAgAAA0gAAABAAABpAAAACAAADSAAAAEVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV'
+    };
+    
+    if (sounds[type]) {
+        soundEl.src = sounds[type];
+        soundEl.volume = 0.5;
+        soundEl.play().catch(() => {});
+    }
+}
+
+// Update settings toggle UI
+function updateSettingsToggles() {
+    const notifToggle = $('toggle-notifications');
+    const soundToggle = $('toggle-sounds');
+    const lowBwToggle = $('toggle-lowbandwidth');
+    
+    if (notifToggle) notifToggle.dataset.enabled = state.settings.notifications;
+    if (soundToggle) soundToggle.dataset.enabled = state.settings.sounds;
+    if (lowBwToggle) lowBwToggle.dataset.enabled = state.settings.lowBandwidth;
+}
+
+// Toggle button click handler
+function handleToggleClick(toggleId, settingKey) {
+    const toggle = $(toggleId);
+    if (!toggle) return;
+    
+    const newValue = toggle.dataset.enabled !== 'true';
+    toggle.dataset.enabled = newValue;
+    state.settings[settingKey] = newValue;
+    
+    // Request notification permission if enabling
+    if (settingKey === 'notifications' && newValue) {
+        requestNotificationPermission();
+    }
+    
+    saveSettings();
+}
+
+// Get video constraints based on low bandwidth mode
+function getVideoConstraints() {
+    if (state.settings.lowBandwidth) {
+        return {
+            width: { ideal: 640 },
+            height: { ideal: 360 },
+            frameRate: { ideal: 15, max: 15 }
+        };
+    }
+    return {
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+    };
+}
+
 // Settings modal event listeners
 document.addEventListener('DOMContentLoaded', () => {
     $('settings-close')?.addEventListener('click', closeSettings);
     $('settings-apply')?.addEventListener('click', applySettings);
+    
+    // Toggle button listeners
+    $('toggle-notifications')?.addEventListener('click', () => handleToggleClick('toggle-notifications', 'notifications'));
+    $('toggle-sounds')?.addEventListener('click', () => handleToggleClick('toggle-sounds', 'sounds'));
+    $('toggle-lowbandwidth')?.addEventListener('click', () => handleToggleClick('toggle-lowbandwidth', 'lowBandwidth'));
     
     // Close modal when clicking outside
     $('settings-modal')?.addEventListener('click', (e) => {

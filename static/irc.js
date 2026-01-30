@@ -381,6 +381,14 @@ function handleIrcMessage(line) {
                 if (!state.irc.sidebarOpen && !isSelf) {
                     state.irc.unreadCount++;
                     updateIrcBadge();
+                    
+                    // Notification and sound for chat messages
+                    if (typeof showNotification === 'function') {
+                        showNotification(`${nick} in ${IRC_CONFIG.channel}`, message, 'irc-message');
+                    }
+                    if (typeof playSound === 'function') {
+                        playSound('message');
+                    }
                 }
             }
             break;
