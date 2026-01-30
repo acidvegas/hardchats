@@ -14,10 +14,10 @@ MAX_CAMERAS = 10
 # TURN/STUN settings
 STUN_SERVER = 'stun:51.222.107.97:3478'
 TURN_SERVER = {
-    'host'       : '51.222.107.97',
-    'port'       : 3478,
-    'username'   : 'hardchats',
-    'credential' : 'somesecretpassword'
+	'host'       : '51.222.107.97',
+	'port'       : 3478,
+	'username'   : 'hardchats',
+	'credential' : 'somesecretpassword'
 }
 ICE_TRANSPORT_POLICY = 'relay'
 
@@ -36,29 +36,29 @@ IRC_MAX_BACKLOG     = 5000  # max messages to keep in chat history
 
 # Helper function - Get client config as dict
 def get_client_config():
-    '''Returns configuration needed by the JavaScript client'''
-    return {
-        'version'     : VERSION,
-        'max_users'   : MAX_USERS,
-        'max_cameras' : MAX_CAMERAS,
-        'turn'        : {
-            'stun_url'             : STUN_SERVER,
-            'host'                 : TURN_SERVER['host'],
-            'port'                 : TURN_SERVER['port'],
-            'username'             : TURN_SERVER['username'],
-            'credential'           : TURN_SERVER['credential'],
-            'ice_transport_policy' : ICE_TRANSPORT_POLICY
-        },
-        'irc': {
-            'server'          : IRC_SERVER,
-            'channel'         : IRC_CHANNEL,
-            'protocols'       : IRC_PROTOCOLS,
-            'user'            : IRC_USER,
-            'realname'        : IRC_REALNAME,
-            'max_nick_length' : IRC_MAX_NICK_LENGTH,
-            'reconnect_delay' : IRC_RECONNECT_DELAY,
-            'join_delay'      : IRC_JOIN_DELAY,
-            'max_backlog'     : IRC_MAX_BACKLOG
-        }
-    }
+	'''Returns configuration needed by the JavaScript client'''
+	return {
+		'version'     : VERSION,
+		'max_users'   : MAX_USERS,
+		'max_cameras' : MAX_CAMERAS,
+		'turn'        : {
+			'stun_url'             : STUN_SERVER,
+			'host'                 : TURN_SERVER['host'],
+			'port'                 : TURN_SERVER['port'],
+			'username'             : TURN_SERVER['username'],
+			'credential'           : TURN_SERVER['credential'],
+			'ice_transport_policy' : ICE_TRANSPORT_POLICY
+		},
+		'irc': {
+			'server'          : IRC_SERVER,
+			'channel'         : IRC_CHANNEL,
+			'protocols'       : IRC_PROTOCOLS,
+			'user'            : IRC_USER,
+			'realname'        : IRC_REALNAME,
+			'max_nick_length' : IRC_MAX_NICK_LENGTH,
+			'reconnect_delay' : IRC_RECONNECT_DELAY,
+			'join_delay'      : IRC_JOIN_DELAY,
+			'max_backlog'     : IRC_MAX_BACKLOG
+		}
+	}
 

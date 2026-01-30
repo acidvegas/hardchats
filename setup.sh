@@ -8,16 +8,16 @@ echo "=== HardChats Setup ==="
 
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then
-    echo "Please run as root: sudo ./setup.sh"
-    exit 1
+	echo "Please run as root: sudo ./setup.sh"
+	exit 1
 fi
 
 # Get public IP
 echo "[*] Detecting public IP..."
 PUBLIC_IP=$(curl -4 -s icanhazip.com)
 if [ -z "$PUBLIC_IP" ]; then
-    echo "[-] Could not detect public IP"
-    exit 1
+	echo "[-] Could not detect public IP"
+	exit 1
 fi
 echo "[+] Public IP: $PUBLIC_IP"
 
@@ -54,14 +54,14 @@ EOF
 
 # Configure firewall if ufw is active
 if command -v ufw &> /dev/null && ufw status | grep -q "active"; then
-    echo "[*] Configuring firewall..."
-    ufw allow 3478/tcp
-    ufw allow 3478/udp
-    ufw allow 5349/tcp
-    ufw allow 5349/udp
-    ufw allow 49152:65535/udp
-    ufw allow 58080/tcp
-    echo "[+] Firewall configured"
+	echo "[*] Configuring firewall..."
+	ufw allow 3478/tcp
+	ufw allow 3478/udp
+	ufw allow 5349/tcp
+	ufw allow 5349/udp
+	ufw allow 49152:65535/udp
+	ufw allow 58080/tcp
+	echo "[+] Firewall configured"
 fi
 
 # Restart coturn
@@ -71,11 +71,11 @@ systemctl enable coturn
 
 # Check status
 if systemctl is-active --quiet coturn; then
-    echo "[+] coturn is running"
+	echo "[+] coturn is running"
 else
-    echo "[-] coturn failed to start"
-    journalctl -u coturn --no-pager -n 20
-    exit 1
+	echo "[-] coturn failed to start"
+	journalctl -u coturn --no-pager -n 20
+	exit 1
 fi
 
 echo ""
@@ -89,17 +89,17 @@ echo "Update your client.js ICE_SERVERS with:"
 echo ""
 cat << EOF
 const ICE_SERVERS = [
-    { urls: 'stun:$PUBLIC_IP:3478' },
-    {
-        urls: 'turn:$PUBLIC_IP:3478',
-        username: 'hardchats',
-        credential: '$TURN_PASSWORD'
-    },
-    {
-        urls: 'turn:$PUBLIC_IP:3478?transport=tcp',
-        username: 'hardchats',
-        credential: '$TURN_PASSWORD'
-    }
+	{ urls: 'stun:$PUBLIC_IP:3478' },
+	{
+		urls: 'turn:$PUBLIC_IP:3478',
+		username: 'hardchats',
+		credential: '$TURN_PASSWORD'
+	},
+	{
+		urls: 'turn:$PUBLIC_IP:3478?transport=tcp',
+		username: 'hardchats',
+		credential: '$TURN_PASSWORD'
+	}
 ];
 EOF
 echo ""
