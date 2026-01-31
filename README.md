@@ -85,24 +85,28 @@ loadmodule "websocket_common";
 ###### Features
 - [ ] End-to-end encryption
 - [ ] Low bandwidth mode
+    - This should turn lower the bitrate if incoming videos for you when enabled.
+    - This should lower the bitrate that you send your video aswell when enabled.
 
 ###### Bugs
 - [ ] ⚠️ IRC connection Chrome-based browsers not working *(Tested via Vandium browser on GrapheneOS and Chromium on Linux/Windows)*
 - [ ] When you try to click something in the users menu, if someone speaks and hilights their name, it hijacks the click in the users menu *(reported by bombuzal)*
-- [ ] Mobile users when they have someone maximized should see a horizontally scrolling list on the bottom of other cameras still, like how desktop mode does it.
-- [ ] Mobile users need to be able to scroll all the video shares in tile mode, they cant all fit on the screen when many people are on camera.
-- [ ] Mobile users personal camera is frozen in a group
 - [ ] Javascript console in Firefox reports `WebRTC: ICE failed, see about:webrtc for more details`
 - [ ] Strange bug observed on Vandium on GrapheneOS mobile, I was unable to hear one specific person who joined after me. Rejoining fixed the issue, but my desktop thatw as connected the whole time didn't suffer from this issue.
 
-###### Touchups
+###### Mobile
 - [ ] Hide the screen share button on mobile as it is pointless.
+- [ ] Mobile users when they have someone maximized should see a horizontally scrolling list on the bottom of other cameras still, like how desktop mode does it.
+- [ ] Mobile users need to be able to scroll all the video shares in tile mode, they cant all fit on the screen when many people are on camera.
+- [ ] Dont start with user list open by default on mobile
+
+###### Touchups
 - [ ] IRC channel +H history loading on connection
-- [ ] Color picker to replace the green accent with your own color choice *(Remembered via cookies)*
 - [ ] Cleaner IRC chat *(hide server notices and redundant content)*
 - [ ] Better captcha system to prevent bot abuse
 
 ###### Fancy Pipe Dreams
+- [ ] Color picker to replace the green accent with your own color choice *(Remembered via cookies)*
 - [ ] Milkdrop animations from the audio
 - [ ] Multiple room support + lobby system
 

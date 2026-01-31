@@ -269,7 +269,10 @@ async def handle_message(client_id: str, data: dict):
 		await broadcast(client_id, {
 			'type'     : 'user_joined',
 			'id'       : client_id,
-			'username' : username
+			'username' : username,
+			'mic_on'   : clients[client_id].get('mic_on', True),
+			'cam_on'   : clients[client_id].get('cam_on', False),
+			'screen_on': clients[client_id].get('screen_on', False)
 		})
 
 	elif msg_type in ('offer', 'answer', 'candidate'):
@@ -305,6 +308,7 @@ async def handle_message(client_id: str, data: dict):
 	elif msg_type == 'mic_status':
 		enabled = data.get('enabled', True)
 		clients[client_id]['mic_on'] = enabled
+		logging.info(f'[{client_id}] Mic status changed to: {enabled}')
 
 		# Broadcast to ALL users including sender
 		await broadcast_all({
@@ -312,6 +316,7 @@ async def handle_message(client_id: str, data: dict):
 			'id'      : client_id,
 			'enabled' : enabled
 		})
+		logging.info(f'[{client_id}] Broadcasted mic_status to all clients')
 
 	elif msg_type == 'screen_status':
 		enabled = data.get('enabled', False)
