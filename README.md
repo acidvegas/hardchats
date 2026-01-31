@@ -96,7 +96,7 @@ loadmodule "websocket_common";
 - [ ] Hide the screen share button on mobile as it is pointless.
 - [ ] Dont start with user list open by default on mobile
 - [ ] Mobile users when they have someone maximized should see a horizontally scrolling list on the bottom of other cameras still, like how desktop mode does it.
-- [ ] Mobile users need to be able to scroll all the video shares in tile mode, they cant all fit on the screen when many people are on camera.
+- [ ] Mobile users need to be able to fit all video tiles on the screen dynamically resizing it as the grid grows.
 
 
 ###### Touchups
@@ -109,9 +109,12 @@ loadmodule "websocket_common";
 - [ ] Hang up button to close the tab
 - [ ] User list & chatbox should be full sized when toggled on or off.
 
+
 ###### Fancy Pipe Dreams
+- [ ] Improve debug menu to show resource utilization of ram, cpu, inbound and outbound traffic, network information, connected duration, better live logs, able to toggle debug mode on or off to retain the last 5000 lines of logs so you can conduct actions when closing the debug menu and check back on the debug logs afterwards.
+- [ ] Option in the settings menu to turn on no-cam tile mode, where all users have a box on the screen, even if they are not on camera *(Remembered via cookies)*
 - [ ] Color picker to replace the green accent with your own color choice *(Remembered via cookies)*
-- [ ] Milkdrop animations from the audio
+- [ ] Milkdrop animations from the audio *(either background or for no-cam tile mode when people speak)*
 - [ ] Multiple room support + lobby system
 
 ## Contribute
