@@ -90,6 +90,7 @@ loadmodule "websocket_common";
 - [ ] Mute indiactors are not work. They sync on first connect but when someone (un)mutes, it does not detect it.
 - [ ] When you try to click something in the users menu, if someone speaks and hilights their name, it hijacks the click in the users menu *(reported by bombuzal)*
 - [ ] Trying to copy text in the chat box does not work as it activates the hotkey to hide/show the chat.
+- [ ] When a person closes their tab, their user is not instantly removed from the user list. Console shows an attempt at renegotiating. Need to make it instant.
 
 ###### Mobile Issues
 - [ ] Hide the screen share button on mobile as it is pointless.
