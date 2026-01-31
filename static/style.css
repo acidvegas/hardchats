@@ -67,11 +67,48 @@ body {
 	font-size: 3.5rem;
 	font-weight: 400;
 	text-align: center;
-	margin-bottom: 2rem;
+	margin-bottom: 0.5rem;
 	color: var(--acid);
 	position: relative;
 	text-shadow: 0 0 20px var(--acid-glow);
 	animation: glitch-shake 1s infinite;
+}
+
+.user-count-home {
+	text-align: center;
+	color: var(--text-muted);
+	font-size: 0.9rem;
+	margin-bottom: 1.5rem;
+	font-style: italic;
+}
+
+/* Noscript warning */
+.noscript-warning {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: var(--bg);
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	z-index: 9999;
+	padding: 2rem;
+	text-align: center;
+}
+
+.noscript-warning h2 {
+	color: var(--danger);
+	font-size: 2rem;
+	margin-bottom: 1rem;
+}
+
+.noscript-warning p {
+	color: var(--text-muted);
+	font-size: 1.1rem;
+	max-width: 500px;
 }
 
 @keyframes glitch-shake {
@@ -296,6 +333,30 @@ body {
 	color: white;
 }
 
+.control-btn.cooldown {
+	background: var(--bg-tertiary);
+	border-color: var(--border);
+	color: var(--text-muted);
+	cursor: not-allowed;
+	opacity: 0.7;
+	position: relative;
+}
+
+.control-btn.cooldown::after {
+	content: attr(data-cooldown);
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	font-size: 14px;
+	font-weight: bold;
+	color: var(--warning);
+}
+
+.control-btn.cooldown svg {
+	opacity: 0.3;
+}
+
 /* ========== VIDEO CONTAINER ========== */
 #video-container {
 	flex: 1;
@@ -326,7 +387,7 @@ body {
 
 /* ========== VIDEO TILES ========== */
 .video-tile {
-	aspect-ratio: 16 / 9;
+	aspect-ratio: 1; /* Square tiles - crops sides for center focus */
 	background: var(--bg-secondary);
 	border: 2px solid var(--border);
 	border-radius: 12px;
@@ -348,6 +409,15 @@ body {
 .video-tile.speaking {
 	border-color: var(--acid);
 	box-shadow: 0 0 30px var(--acid-glow), inset 0 0 30px var(--acid-subtle);
+}
+
+/* Screen share tile style */
+.video-tile.screen-share {
+	border-color: #8b5cf6;
+}
+
+.video-tile.screen-share:hover {
+	box-shadow: 0 0 20px rgba(139, 92, 246, 0.3);
 }
 
 /* Local tile base style */
@@ -458,6 +528,23 @@ body {
 	overflow: hidden;
 	transition: width 0.3s ease;
 	width: 320px;
+	position: relative;
+}
+
+.irc-resize-handle {
+	position: absolute;
+	right: 0;
+	top: 0;
+	bottom: 0;
+	width: 5px;
+	cursor: ew-resize;
+	background: transparent;
+	z-index: 10;
+	transition: background 0.2s;
+}
+
+.irc-resize-handle:hover {
+	background: var(--acid);
 }
 
 #irc-sidebar.collapsed {
@@ -733,6 +820,71 @@ body {
 	flex-direction: column;
 	flex-shrink: 0;
 	overflow: hidden;
+	position: relative;
+}
+
+.sidebar-resize-handle {
+	position: absolute;
+	left: 0;
+	top: 0;
+	bottom: 0;
+	width: 5px;
+	cursor: ew-resize;
+	background: transparent;
+	z-index: 10;
+	transition: background 0.2s;
+}
+
+.sidebar-resize-handle:hover {
+	background: var(--acid);
+}
+
+.sidebar-footer {
+	padding: 12px;
+	border-top: 1px solid var(--border);
+	margin-top: auto;
+}
+
+.defcon-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	width: 100%;
+	padding: 10px 16px;
+	background: var(--bg-tertiary);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	color: var(--text-muted);
+	font-size: 13px;
+	font-weight: 600;
+	cursor: pointer;
+	transition: all 0.2s;
+	text-transform: uppercase;
+	letter-spacing: 1px;
+}
+
+.defcon-btn svg {
+	width: 18px;
+	height: 18px;
+}
+
+.defcon-btn:hover {
+	background: rgba(239, 68, 68, 0.1);
+	border-color: #ef4444;
+	color: #ef4444;
+}
+
+.defcon-btn.active {
+	background: rgba(239, 68, 68, 0.2);
+	border-color: #ef4444;
+	color: #ef4444;
+	animation: defcon-pulse 2s ease-in-out infinite;
+}
+
+@keyframes defcon-pulse {
+	0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+	50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
 }
 
 .sidebar-header {
@@ -846,6 +998,8 @@ body {
 }
 
 .indicator.cam-on { color: var(--acid); }
+.indicator.screen-on { color: #8b5cf6; } /* Purple for screen share */
+.indicator.mic-muted { color: #ef4444; } /* Red for muted mic */
 
 .indicator.mic-active {
 	color: var(--acid);

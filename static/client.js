@@ -6,10 +6,12 @@ const state = {
 	localStream: null,
 	localAudioContext: null,
 	localAnalyser: null,
+	screenStream: null,
 	peers: {},
 	users: {},
 	micEnabled: true,
 	camEnabled: false,
+	screenEnabled: false,
 	volumeEnabled: true,
 	maximizedPeer: null,
 	sidebarOpen: true,
@@ -17,6 +19,7 @@ const state = {
 	sessionStart: null,
 	maxCameras: 10,
 	configLoaded: false,
+	defconMode: false, // Auto-mute and hide video for new users
 	// Settings
 	settings: {
 		notifications: true,
@@ -56,6 +59,49 @@ function saveSettings() {
 	}
 }
 
+// Load saved username from localStorage
+function loadSavedUsername() {
+	try {
+		const saved = localStorage.getItem('hardchats_username');
+		if (saved) {
+			$('username').value = saved;
+		}
+	} catch (e) {
+		console.error('[Settings] Failed to load username:', e);
+	}
+}
+
+// Save username to localStorage
+function saveUsername(username) {
+	try {
+		localStorage.setItem('hardchats_username', username);
+	} catch (e) {
+		console.error('[Settings] Failed to save username:', e);
+	}
+}
+
+// Load saved device preferences
+function loadSavedDevices() {
+	try {
+		const saved = localStorage.getItem('hardchats_devices');
+		if (saved) {
+			return JSON.parse(saved);
+		}
+	} catch (e) {
+		console.error('[Settings] Failed to load devices:', e);
+	}
+	return null;
+}
+
+// Save device preferences
+function saveDevices(micId, camId) {
+	try {
+		localStorage.setItem('hardchats_devices', JSON.stringify({ micId, camId }));
+	} catch (e) {
+		console.error('[Settings] Failed to save devices:', e);
+	}
+}
+
 const USERNAME_REGEX = /^[\x20-\x7E]{1,20}$/;
 
 const $ = (id) => document.getElementById(id);
@@ -63,6 +109,9 @@ const $ = (id) => document.getElementById(id);
 document.addEventListener('DOMContentLoaded', async () => {
 	// Load saved settings
 	loadSettings();
+
+	// Load saved username
+	loadSavedUsername();
 
 	// Load configuration from server first
 	await loadConfig();
@@ -73,6 +122,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 	$('refresh-captcha').addEventListener('click', loadCaptcha);
 	$('mic-btn').addEventListener('click', toggleMic);
 	$('cam-btn').addEventListener('click', toggleCam);
+	$('screen-btn').addEventListener('click', toggleScreen);
 	$('volume-btn').addEventListener('click', toggleVolume);
 	$('users-btn').addEventListener('click', toggleSidebar);
 	$('close-sidebar').addEventListener('click', toggleSidebar);
@@ -101,10 +151,30 @@ document.addEventListener('DOMContentLoaded', async () => {
 			case 'c':
 				toggleIrcSidebar();
 				break;
+			case 's':
+				toggleScreen();
+				break;
+			case 'd':
+				toggleDefcon();
+				break;
 		}
 	});
 
+	// DEFCON mode button
+	$('defcon-btn').addEventListener('click', toggleDefcon);
+
+	// Resizable sidebars
+	initSidebarResize();
+
 	loadCaptcha();
+	loadUserCount();
+	
+	// Refresh user count every 10 seconds while on login screen
+	setInterval(() => {
+		if (!$('login-screen').classList.contains('hidden')) {
+			loadUserCount();
+		}
+	}, 10000);
 });
 
 async function loadConfig() {
@@ -146,6 +216,32 @@ async function loadCaptcha() {
 	}
 }
 
+async function loadUserCount() {
+	try {
+		const res = await fetch('/api/users/count');
+		const data = await res.json();
+		const count = data.count || 0;
+		const el = $('user-count-home');
+		if (el) {
+			if (count === 0) {
+				el.textContent = 'No one is yapping yet. Be the first!';
+			} else if (count === 1) {
+				el.textContent = '1 person is yapping';
+			} else {
+				el.textContent = `${count} people are yapping`;
+			}
+		}
+	} catch (e) {
+		console.error('User count error:', e);
+		const el = $('user-count-home');
+		if (el) el.textContent = '';
+	}
+}
+
+// Camera cooldown state
+let cameraCooldown = false;
+let cameraCooldownTimer = null;
+
 function validateUsername(name) {
 	return USERNAME_REGEX.test(name);
 }
@@ -165,7 +261,13 @@ async function connect() {
 	$('login-error').classList.add('hidden');
 
 	try {
-		state.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+		// Check for saved device preferences
+		const savedDevices = loadSavedDevices();
+		const audioConstraints = savedDevices?.micId 
+			? { deviceId: { ideal: savedDevices.micId } }
+			: true;
+
+		state.localStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints, video: false });
 
 		// Setup local audio analyser for speaking detection
 		setupLocalAudioAnalyser();
@@ -241,16 +343,19 @@ function handleSignal(data) {
 			state.sessionStart = data.session_start;
 			state.maxCameras = data.max_cameras;
 			
+			// Save username on successful login
+			saveUsername(state.username);
+			
 			$('login-screen').classList.add('hidden');
 			$('chat-screen').classList.remove('hidden');
 			
 			$('sidebar').classList.remove('hidden');
 			$('users-btn').classList.add('active');
 			
-			state.users['local'] = { username: state.username, camOn: false, speaking: false };
+			state.users['local'] = { username: state.username, camOn: false, micOn: true, screenOn: false, speaking: false };
 			
 			data.users.forEach(user => {
-				state.users[user.id] = { username: user.username, camOn: user.cam_on, speaking: false };
+				state.users[user.id] = { username: user.username, camOn: user.cam_on, micOn: user.mic_on !== false, screenOn: user.screen_on || false, speaking: false };
 				createPeerConnection(user.id, user.username, true);
 			});
 			
@@ -264,7 +369,7 @@ function handleSignal(data) {
 			break;
 			
 		case 'user_joined':
-			state.users[data.id] = { username: data.username, camOn: false, speaking: false };
+			state.users[data.id] = { username: data.username, camOn: false, micOn: true, screenOn: false, speaking: false };
 			updateUI();
 			
 			// Notification and sound
@@ -295,7 +400,7 @@ function handleSignal(data) {
 			break;
 			
 		case 'offer':
-			state.users[data.from] = state.users[data.from] || { username: data.username, camOn: false, speaking: false };
+			state.users[data.from] = state.users[data.from] || { username: data.username, camOn: false, micOn: true, screenOn: false, speaking: false };
 			handleOffer(data.from, data.username, data.sdp);
 			updateUI();
 			break;
@@ -322,6 +427,37 @@ function handleSignal(data) {
 				state.maximizedPeer = null;
 			}
 			
+			updateUI();
+			break;
+			
+		case 'mic_status':
+			console.log('[Signal] mic_status received:', data);
+			if (data.id === state.myId) {
+				state.users['local'].micOn = data.enabled;
+				console.log('[Signal] Updated local micOn to:', data.enabled);
+			} else if (state.users[data.id]) {
+				state.users[data.id].micOn = data.enabled;
+				console.log('[Signal] Updated user', data.id, 'micOn to:', data.enabled);
+			} else {
+				console.log('[Signal] User not found for mic_status:', data.id, 'Known users:', Object.keys(state.users));
+			}
+			updateUI();
+			break;
+			
+		case 'screen_status':
+			console.log('[Signal] screen_status received:', data);
+			if (data.id === state.myId) {
+				state.users['local'].screenOn = data.enabled;
+				console.log('[Signal] Updated local screenOn to:', data.enabled);
+			} else if (state.users[data.id]) {
+				state.users[data.id].screenOn = data.enabled;
+				if (state.peers[data.id]) {
+					state.peers[data.id].screenOn = data.enabled;
+				}
+				console.log('[Signal] Updated user', data.id, 'screenOn to:', data.enabled);
+			} else {
+				console.log('[Signal] User not found for screen_status:', data.id, 'Known users:', Object.keys(state.users));
+			}
 			updateUI();
 			break;
 			
@@ -432,14 +568,17 @@ async function createPeerConnection(peerId, username, initiator) {
 	// Use TURN config from turn.js
 	const pc = new RTCPeerConnection(getRtcConfig());
 	
+	// Apply DEFCON mode if enabled - auto-mute and hide video for new peers
+	const applyDefcon = state.defconMode;
+	
 	state.peers[peerId] = { 
 		pc, 
 		stream: null, 
 		username, 
 		camOn: state.users[peerId]?.camOn || false, 
-		muted: false, 
-		videoOff: false, 
-		volume: 100,
+		muted: applyDefcon, // Mute if DEFCON mode
+		videoOff: applyDefcon, // Hide video if DEFCON mode
+		volume: applyDefcon ? 0 : 100, // Set volume to 0 if DEFCON mode
 		audioContext: null, 
 		analyser: null,
 		gainNode: null,
@@ -491,7 +630,34 @@ async function createPeerConnection(peerId, username, initiator) {
 		if (pc.connectionState === 'connected') {
 			startNetworkMonitoring(peerId);
 			updateUI();
-		} else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+		} else if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+			// Peer connection failed or closed - clean up this peer
+			// This acts as a client-side fallback if server's user_left message is delayed
+			console.log(`[WebRTC] Peer ${peerId} connection ${pc.connectionState}`);
+			if (state.peers[peerId]?.statsInterval) {
+				clearInterval(state.peers[peerId].statsInterval);
+			}
+			// Remove peer from local state after a short delay
+			// (give server time to send user_left first to avoid duplicate cleanup)
+			setTimeout(() => {
+				// Only cleanup if peer still exists and connection is still failed/closed
+				if (state.peers[peerId] && 
+					(state.peers[peerId].pc.connectionState === 'failed' || 
+					 state.peers[peerId].pc.connectionState === 'closed')) {
+					console.log(`[WebRTC] Cleaning up disconnected peer ${peerId}`);
+					if (state.peers[peerId].audioContext) state.peers[peerId].audioContext.close();
+					state.peers[peerId].pc.close();
+					delete state.peers[peerId];
+					delete state.users[peerId];
+					if (state.maximizedPeer === peerId) {
+						state.maximizedPeer = null;
+					}
+					updateUI();
+				}
+			}, 1000); // 1 second delay to let server notification arrive first
+		} else if (pc.connectionState === 'disconnected') {
+			// Disconnected state - might reconnect, just log for now
+			console.log(`[WebRTC] Peer ${peerId} disconnected (may reconnect)`);
 			if (state.peers[peerId]?.statsInterval) {
 				clearInterval(state.peers[peerId].statsInterval);
 			}
@@ -608,25 +774,50 @@ function updateVideoGrid() {
 	
 	const camUsers = [];
 	
+	// Add local camera if enabled
 	if (state.camEnabled && state.users['local']?.camOn) {
 		camUsers.push({ 
 			id: 'local', 
 			username: state.username, 
 			stream: state.localStream, 
 			isLocal: true,
+			isScreen: false,
 			speaking: state.users['local']?.speaking 
 		});
 	}
 	
+	// Add local screen share if enabled (separate tile)
+	if (state.screenEnabled && state.screenStream) {
+		camUsers.push({
+			id: 'local-screen',
+			username: `${state.username} (Screen)`,
+			stream: state.screenStream,
+			isLocal: true,
+			isScreen: true,
+			speaking: false
+		});
+	}
+	
+	// Add remote users' cameras and screens
 	Object.entries(state.peers).forEach(([id, peer]) => {
 		if (state.users[id]?.camOn && peer.stream && !peer.videoOff) {
-			camUsers.push({ 
-				id, 
-				username: peer.username, 
-				stream: peer.stream, 
-				isLocal: false,
-				speaking: state.users[id]?.speaking
-			});
+			// Check if stream has video tracks - could be camera or screen
+			const videoTracks = peer.stream.getVideoTracks();
+			if (videoTracks.length > 0) {
+				camUsers.push({ 
+					id, 
+					username: peer.username, 
+					stream: peer.stream, 
+					isLocal: false,
+					isScreen: false,
+					speaking: state.users[id]?.speaking
+				});
+			}
+		}
+		// Show screen share indicator for remote users
+		if (state.users[id]?.screenOn && peer.stream && !peer.videoOff) {
+			// Screen shares come through the same stream for remote peers
+			// The peer.stream may contain multiple video tracks
 		}
 	});
 	
@@ -674,8 +865,8 @@ function updateVideoGrid() {
 				const rows = Math.ceil(count / cols);
 				const tileWidth = (availableWidth - (cols - 1) * 8) / cols;
 				const tileHeight = (availableHeight - (rows - 1) * 8) / rows;
-				const aspectWidth = tileHeight * (16/9);
-				const size = Math.min(tileWidth, aspectWidth);
+				// Square tiles - use the smaller dimension
+				const size = Math.min(tileWidth, tileHeight);
 				
 				if (size > bestSize) {
 					bestSize = size;
@@ -698,10 +889,12 @@ function updateVideoGrid() {
 }
 
 function createVideoTile(user, isMaximized) {
+	const isScreen = user.isScreen || user.id.includes('-screen');
+	const isLocalUser = user.isLocal && !isScreen;
 	return `
-		<div class="video-tile ${user.isLocal ? 'local' : ''} ${user.speaking ? 'speaking' : ''} ${isMaximized ? 'maximized' : ''}" id="tile-${user.id}">
+		<div class="video-tile ${user.isLocal ? 'local' : ''} ${user.speaking ? 'speaking' : ''} ${isMaximized ? 'maximized' : ''} ${isScreen ? 'screen-share' : ''}" id="tile-${user.id}">
 			<video autoplay playsinline ${user.isLocal ? 'muted' : ''}></video>
-			<div class="username">${escapeHtml(user.username)}${user.isLocal ? ' <span class="you">(you)</span>' : ''}</div>
+			<div class="username">${isScreen ? '🖥️ ' : ''}${escapeHtml(user.username)}${isLocalUser ? ' <span class="you">(you)</span>' : ''}</div>
 		</div>
 	`;
 }
@@ -759,10 +952,16 @@ function updateUsersList() {
 	const list = $('users-list');
 	const count = $('user-count');
 	
+	// Build user list and sort alphabetically by username
 	const allUsers = [
 		{ id: 'local', ...state.users['local'], isLocal: true },
 		...Object.entries(state.users).filter(([id]) => id !== 'local').map(([id, u]) => ({ id, ...u, isLocal: false }))
-	];
+	].sort((a, b) => {
+		// Local user always first, then sort alphabetically
+		if (a.isLocal) return -1;
+		if (b.isLocal) return 1;
+		return (a.username || '').toLowerCase().localeCompare((b.username || '').toLowerCase());
+	});
 	
 	count.textContent = allUsers.length;
 	
@@ -787,11 +986,13 @@ function updateUsersList() {
 		return `
 			<div class="user-item ${user.speaking ? 'speaking' : ''} ${user.isLocal ? 'local' : ''}" data-id="${user.id}">
 				<div class="user-info">
-					<span class="user-name">${escapeHtml(user.username)}</span>
 					${user.isLocal ? '' : getNetworkQualityHTML(user.id)}
+					<span class="user-name">${escapeHtml(user.username)}</span>
 					<div class="user-indicators">
-						${user.camOn ? '<svg class="indicator cam-on" viewBox="0 0 24 24" fill="currentColor"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>' : ''}
-						${user.speaking ? '<svg class="indicator mic-active" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>' : ''}
+						${user.micOn === false ? '<svg class="indicator mic-muted" viewBox="0 0 24 24" fill="currentColor" title="Muted"><path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-1.66-1.34-3-3-3S9 3.34 9 5v.18l5.98 5.99zM4.27 3L3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z"/></svg>' : ''}
+						${user.camOn ? '<svg class="indicator cam-on" viewBox="0 0 24 24" fill="currentColor" title="Camera On"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>' : ''}
+						${user.screenOn ? '<svg class="indicator screen-on" viewBox="0 0 24 24" fill="currentColor" title="Sharing Screen"><path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/></svg>' : ''}
+						${user.speaking && user.micOn !== false ? '<svg class="indicator mic-active" viewBox="0 0 24 24" fill="currentColor" title="Speaking"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>' : ''}
 					</div>
 				</div>
 				${user.isLocal ? `
@@ -931,9 +1132,20 @@ function toggleMic() {
 	state.localStream?.getAudioTracks().forEach(t => t.enabled = state.micEnabled);
 	$('mic-btn').classList.toggle('active', state.micEnabled);
 	$('mic-btn').classList.toggle('muted', !state.micEnabled);
+	
+	// Broadcast mic status to other users
+	state.users['local'].micOn = state.micEnabled;
+	send({ type: 'mic_status', enabled: state.micEnabled });
+	updateUI();
 }
 
 async function toggleCam() {
+	// Check for cooldown when trying to turn ON camera
+	if (!state.camEnabled && cameraCooldown) {
+		console.log('[Camera] Cooldown active, please wait');
+		return;
+	}
+	
 	if (!state.camEnabled) {
 		try {
 			const videoStream = await navigator.mediaDevices.getUserMedia({
@@ -985,9 +1197,102 @@ async function toggleCam() {
 		send({ type: 'camera_status', enabled: false });
 
 		if (state.maximizedPeer === 'local') state.maximizedPeer = null;
+		
+		// Start 5 second cooldown after turning camera off
+		cameraCooldown = true;
+		$('cam-btn').classList.add('cooldown');
+		let cooldownSeconds = 5;
+		$('cam-btn').setAttribute('data-cooldown', cooldownSeconds);
+		
+		cameraCooldownTimer = setInterval(() => {
+			cooldownSeconds--;
+			if (cooldownSeconds <= 0) {
+				clearInterval(cameraCooldownTimer);
+				cameraCooldown = false;
+				$('cam-btn').classList.remove('cooldown');
+				$('cam-btn').removeAttribute('data-cooldown');
+			} else {
+				$('cam-btn').setAttribute('data-cooldown', cooldownSeconds);
+			}
+		}, 1000);
 	}
 
 	$('cam-btn').classList.toggle('active', state.camEnabled);
+	updateUI();
+}
+
+async function toggleScreen() {
+	if (!state.screenEnabled) {
+		try {
+			// Request screen capture
+			state.screenStream = await navigator.mediaDevices.getDisplayMedia({
+				video: {
+					cursor: 'always',
+					displaySurface: 'monitor'
+				},
+				audio: false
+			});
+			
+			const screenTrack = state.screenStream.getVideoTracks()[0];
+			
+			// Handle user stopping share via browser UI
+			screenTrack.onended = () => {
+				if (state.screenEnabled) {
+					toggleScreen(); // Turn off screen share
+				}
+			};
+			
+			// Add screen track to all peer connections
+			for (const [peerId, peer] of Object.entries(state.peers)) {
+				peer.pc.addTrack(screenTrack, state.screenStream);
+				const offer = await peer.pc.createOffer();
+				await peer.pc.setLocalDescription(offer);
+				send({ type: 'offer', target: peerId, sdp: offer.sdp });
+			}
+			
+			state.screenEnabled = true;
+			state.users['local'].screenOn = true;
+			send({ type: 'screen_status', enabled: true });
+			
+		} catch (err) {
+			console.error('Screen share error:', err);
+			// User cancelled or error - don't show alert for user cancellation
+			if (err.name !== 'NotAllowedError') {
+				alert('Could not share screen: ' + err.message);
+			}
+			return;
+		}
+	} else {
+		// Stop screen share
+		if (state.screenStream) {
+			state.screenStream.getTracks().forEach(track => track.stop());
+			
+			// Remove screen track from peer connections
+			for (const [peerId, peer] of Object.entries(state.peers)) {
+				const screenSenders = peer.pc.getSenders().filter(s => 
+					s.track && s.track.kind === 'video' && state.screenStream.getVideoTracks().includes(s.track)
+				);
+				screenSenders.forEach(sender => peer.pc.removeTrack(sender));
+				
+				// Renegotiate
+				try {
+					const offer = await peer.pc.createOffer();
+					await peer.pc.setLocalDescription(offer);
+					send({ type: 'offer', target: peerId, sdp: offer.sdp });
+				} catch (e) {
+					console.error(`[WebRTC] Failed to renegotiate with ${peerId}:`, e);
+				}
+			}
+			
+			state.screenStream = null;
+		}
+		
+		state.screenEnabled = false;
+		state.users['local'].screenOn = false;
+		send({ type: 'screen_status', enabled: false });
+	}
+	
+	$('screen-btn').classList.toggle('active', state.screenEnabled);
 	updateUI();
 }
 
@@ -1018,9 +1323,89 @@ function toggleVolume() {
 	console.log(`[Audio] Global volume ${state.volumeEnabled ? 'enabled' : 'muted'}`);
 }
 
+function toggleDefcon() {
+	state.defconMode = !state.defconMode;
+	$('defcon-btn').classList.toggle('active', state.defconMode);
+	
+	console.log(`[DEFCON] Mode ${state.defconMode ? 'ENABLED - new users will be muted and video hidden' : 'disabled'}`);
+}
+
+function initSidebarResize() {
+	// Users sidebar resize (right side)
+	const sidebar = $('sidebar');
+	const sidebarResize = $('sidebar-resize');
+	
+	if (sidebarResize) {
+		let isResizing = false;
+		let startX, startWidth;
+		
+		sidebarResize.addEventListener('mousedown', (e) => {
+			isResizing = true;
+			startX = e.clientX;
+			startWidth = sidebar.offsetWidth;
+			document.body.style.cursor = 'ew-resize';
+			document.body.style.userSelect = 'none';
+		});
+		
+		document.addEventListener('mousemove', (e) => {
+			if (!isResizing) return;
+			const diff = startX - e.clientX;
+			const newWidth = Math.min(Math.max(startWidth + diff, 200), 500); // Min 200px, max 500px
+			sidebar.style.width = newWidth + 'px';
+		});
+		
+		document.addEventListener('mouseup', () => {
+			if (isResizing) {
+				isResizing = false;
+				document.body.style.cursor = '';
+				document.body.style.userSelect = '';
+			}
+		});
+	}
+	
+	// IRC sidebar resize (left side)
+	const ircSidebar = $('irc-sidebar');
+	const ircResize = $('irc-resize');
+	
+	if (ircResize) {
+		let isResizing = false;
+		let startX, startWidth;
+		
+		ircResize.addEventListener('mousedown', (e) => {
+			isResizing = true;
+			startX = e.clientX;
+			startWidth = ircSidebar.offsetWidth;
+			document.body.style.cursor = 'ew-resize';
+			document.body.style.userSelect = 'none';
+		});
+		
+		document.addEventListener('mousemove', (e) => {
+			if (!isResizing) return;
+			const diff = e.clientX - startX;
+			const newWidth = Math.min(Math.max(startWidth + diff, 250), 600); // Min 250px, max 600px
+			ircSidebar.style.width = newWidth + 'px';
+		});
+		
+		document.addEventListener('mouseup', () => {
+			if (isResizing) {
+				isResizing = false;
+				document.body.style.cursor = '';
+				document.body.style.userSelect = '';
+			}
+		});
+	}
+}
+
 function toggleSidebar() {
 	state.sidebarOpen = !state.sidebarOpen;
-	$('sidebar').classList.toggle('hidden', !state.sidebarOpen);
+	const sidebar = $('sidebar');
+	
+	// Clear inline width when hiding so CSS takes effect properly
+	if (!state.sidebarOpen) {
+		sidebar.style.width = '';
+	}
+	
+	sidebar.classList.toggle('hidden', !state.sidebarOpen);
 	$('users-btn').classList.toggle('active', state.sidebarOpen);
 	updateOverlay();
 }
@@ -1029,12 +1414,14 @@ function closeSidebars() {
 	// Close user sidebar
 	if (state.sidebarOpen) {
 		state.sidebarOpen = false;
+		$('sidebar').style.width = ''; // Clear inline width
 		$('sidebar').classList.add('hidden');
 		$('users-btn').classList.remove('active');
 	}
 	// Close IRC sidebar
 	if (state.irc.sidebarOpen) {
 		state.irc.sidebarOpen = false;
+		$('irc-sidebar').style.width = ''; // Clear inline width
 		$('irc-sidebar').classList.add('collapsed');
 		$('irc-toggle').classList.remove('active');
 	}
@@ -1062,17 +1449,28 @@ function handlePageLeave() {
 	// Disconnect from IRC
 	disconnectIrc();
 
-	// Send leave message to server for immediate cleanup
-	if (state.ws?.readyState === WebSocket.OPEN) {
+	// Use sendBeacon for reliable leave notification during page unload
+	// This is more reliable than WebSocket send during beforeunload/pagehide
+	// Must use Blob with application/json content-type for proper server parsing
+	if (state.myId) {
 		try {
-			state.ws.send(JSON.stringify({ type: 'leave' }));
+			const data = new Blob([JSON.stringify({ client_id: state.myId })], { type: 'application/json' });
+			navigator.sendBeacon('/api/leave', data);
 		} catch (e) {
-			// Ignore errors during unload
+			// Fallback to WebSocket if sendBeacon fails
+			if (state.ws?.readyState === WebSocket.OPEN) {
+				try {
+					state.ws.send(JSON.stringify({ type: 'leave' }));
+				} catch (e2) {
+					// Ignore errors during unload
+				}
+			}
 		}
 	}
 
 	if (state.localAudioContext) state.localAudioContext.close();
 	state.localStream?.getTracks().forEach(t => t.stop());
+	state.screenStream?.getTracks().forEach(t => t.stop());
 	Object.values(state.peers).forEach(p => {
 		if (p.audioContext) p.audioContext.close();
 		p.pc.close();
@@ -1310,6 +1708,11 @@ async function applySettings() {
 			$('cam-btn').classList.remove('active');
 		}
 	}
+
+	// Save device preferences to localStorage
+	const finalMicId = $('mic-select').value;
+	const finalCamId = $('cam-select').value;
+	saveDevices(finalMicId, finalCamId);
 
 	updateUI();
 	closeSettings();

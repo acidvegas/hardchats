@@ -93,7 +93,14 @@ function updateCharCount() {
 
 function toggleIrcSidebar() {
 	state.irc.sidebarOpen = !state.irc.sidebarOpen;
-	$('irc-sidebar').classList.toggle('collapsed', !state.irc.sidebarOpen);
+	const ircSidebar = $('irc-sidebar');
+	
+	// Clear inline width when collapsing so CSS width:0 takes effect
+	if (!state.irc.sidebarOpen) {
+		ircSidebar.style.width = '';
+	}
+	
+	ircSidebar.classList.toggle('collapsed', !state.irc.sidebarOpen);
 	$('irc-toggle').classList.toggle('active', state.irc.sidebarOpen);
 
 	if (state.irc.sidebarOpen) {
@@ -210,12 +217,15 @@ function connectIrc() {
 		console.log('[IRC] Attempting WebSocket connection...');
 		console.log('[IRC] URL:', IRC_CONFIG.server);
 		console.log('[IRC] Subprotocols:', IRC_CONFIG.protocols);
+		console.log('[IRC] Browser:', navigator.userAgent);
 
 		state.irc.ws = new WebSocket(IRC_CONFIG.server, IRC_CONFIG.protocols);
 
 		state.irc.ws.onopen = () => {
 			console.log('[IRC] WebSocket connected successfully');
 			console.log('[IRC] Protocol selected:', state.irc.ws.protocol);
+			console.log('[IRC] Extensions:', state.irc.ws.extensions);
+			console.log('[IRC] Binary type:', state.irc.ws.binaryType);
 			// Send IRC registration
 			ircSend(`NICK ${state.irc.nick}`);
 			ircSend(`USER ${IRC_CONFIG.user} 0 * :${IRC_CONFIG.realname}`);
@@ -229,10 +239,14 @@ function connectIrc() {
 		};
 
 		state.irc.ws.onclose = (e) => {
-			console.log('[IRC] WebSocket closed');
+			console.log('[IRC] ========== WEBSOCKET CLOSED ==========');
 			console.log('[IRC] Close code:', e.code);
 			console.log('[IRC] Close reason:', e.reason || '(none provided)');
 			console.log('[IRC] Clean close:', e.wasClean);
+			console.log('[IRC] Event type:', e.type);
+			console.log('[IRC] Target URL:', e.target?.url);
+			console.log('[IRC] ReadyState at close:', state.irc.ws?.readyState);
+			console.log('[IRC] =========================================');
 
 			state.irc.connected = false;
 			state.irc.ws = null;
@@ -247,22 +261,33 @@ function connectIrc() {
 				return;
 			}
 
-			// More descriptive disconnect messages
+			// More descriptive disconnect messages based on close code
 			let msg = 'Disconnected from IRC';
-			if (e.code === 1006) {
-				msg = 'Connection failed - check if server supports WebSocket on this port';
-			} else if (e.code === 1015) {
-				msg = 'TLS handshake failed - certificate issue';
-			} else if (e.reason) {
-				msg = `Disconnected: ${e.reason}`;
+			switch (e.code) {
+				case 1000: msg = 'Connection closed normally'; break;
+				case 1001: msg = 'Server going away'; break;
+				case 1002: msg = 'Protocol error'; break;
+				case 1003: msg = 'Unsupported data type'; break;
+				case 1005: msg = 'No status code received'; break;
+				case 1006: msg = 'Connection lost abnormally (network error, TLS failure, or server unreachable)'; break;
+				case 1007: msg = 'Invalid message data'; break;
+				case 1008: msg = 'Policy violation'; break;
+				case 1009: msg = 'Message too large'; break;
+				case 1010: msg = 'Missing expected extension'; break;
+				case 1011: msg = 'Internal server error'; break;
+				case 1015: msg = 'TLS handshake failed'; break;
+				default: if (e.reason) msg = `Disconnected: ${e.reason}`;
 			}
 			addIrcMessage('system', msg);
 		};
 
 		state.irc.ws.onerror = (err) => {
-			console.error('[IRC] WebSocket error event fired');
-			console.error('[IRC] Error object:', err);
-			console.error('[IRC] WebSocket readyState:', state.irc.ws?.readyState);
+			console.error('[IRC] ========== WEBSOCKET ERROR ==========');
+			console.error('[IRC] Error event:', err);
+			console.error('[IRC] Error type:', err.type);
+			console.error('[IRC] Target URL:', err.target?.url);
+			console.error('[IRC] ReadyState:', state.irc.ws?.readyState);
+			console.error('[IRC] =========================================');
 			// Don't show error if intentional disconnect
 			if (!state.irc.intentionalDisconnect) {
 				addIrcMessage('error', 'Connection error - see browser console (F12) for details');

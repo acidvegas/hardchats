@@ -22,7 +22,7 @@ import config
 
 
 # Globals
-clients       = {} # client_id -> {ws, username, cam_on}
+clients       = {} # client_id -> {ws, username, cam_on, mic_on, screen_on}
 captchas      = {} # captcha_id -> {answer, expires}
 session_start = None
 
@@ -112,7 +112,15 @@ async def index(request: web.Request) -> web.Response:
 	'''Serve the index.html file'''
 
 	with open('static/index.html', 'r') as f:
-		return web.Response(text=f.read(), content_type='text/html')
+		return web.Response(
+			text=f.read(), 
+			content_type='text/html',
+			headers={
+				'Cache-Control': 'no-cache, no-store, must-revalidate',
+				'Pragma': 'no-cache',
+				'Expires': '0'
+			}
+		)
 
 
 async def get_captcha(request: web.Request) -> web.Response:
@@ -141,6 +149,37 @@ async def get_config(request: web.Request) -> web.Response:
 	return web.json_response(config.get_client_config())
 
 
+async def get_user_count(request: web.Request) -> web.Response:
+	'''
+	Get the current number of users in the room
+	
+	:param request: The request object
+	'''
+	
+	active_users = len([c for c in clients.values() if c['username']])
+	return web.json_response({'count': active_users})
+
+
+async def leave_handler(request: web.Request) -> web.Response:
+	'''
+	Handle leave requests via beacon/POST (for reliable page unload notification)
+	
+	:param request: The request object
+	'''
+
+	try:
+		data = await request.json()
+		client_id = data.get('client_id')
+
+		if client_id and client_id in clients:
+			logging.info(f'[{client_id}] Leave via beacon')
+			await cleanup(client_id)
+
+		return web.Response(status=204)
+	except:
+		return web.Response(status=400)
+
+
 async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
 	'''
 	Handle WebSocket connections
@@ -150,12 +189,12 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
 
 	global session_start
 
-	# Heartbeat of 10 seconds - if client doesn't respond to ping within 10s, connection is closed
-	ws = web.WebSocketResponse(heartbeat=10.0)
+	# Heartbeat of 5 seconds - if client doesn't respond to ping within 5s, connection is closed
+	ws = web.WebSocketResponse(heartbeat=5.0)
 	await ws.prepare(request)
 
 	client_id = str(uuid.uuid4())[:8]
-	clients[client_id] = {'ws': ws, 'username': None, 'cam_on': False}
+	clients[client_id] = {'ws': ws, 'username': None, 'cam_on': False, 'mic_on': True, 'screen_on': False}
 
 	logging.info(f'[{client_id}] Connected')
 
@@ -214,7 +253,7 @@ async def handle_message(client_id: str, data: dict):
 		logging.info(f'[{client_id}] Joined as {username}')
 
 		users = [
-			{'id': cid, 'username': c['username'], 'cam_on': c.get('cam_on', False)}
+			{'id': cid, 'username': c['username'], 'cam_on': c.get('cam_on', False), 'mic_on': c.get('mic_on', True), 'screen_on': c.get('screen_on', False)}
 			for cid, c in clients.items()
 			if c['username'] and cid != client_id
 		]
@@ -259,6 +298,28 @@ async def handle_message(client_id: str, data: dict):
 		# Broadcast to ALL users including sender
 		await broadcast_all({
 			'type'    : 'camera_status',
+			'id'      : client_id,
+			'enabled' : enabled
+		})
+
+	elif msg_type == 'mic_status':
+		enabled = data.get('enabled', True)
+		clients[client_id]['mic_on'] = enabled
+
+		# Broadcast to ALL users including sender
+		await broadcast_all({
+			'type'    : 'mic_status',
+			'id'      : client_id,
+			'enabled' : enabled
+		})
+
+	elif msg_type == 'screen_status':
+		enabled = data.get('enabled', False)
+		clients[client_id]['screen_on'] = enabled
+
+		# Broadcast to ALL users including sender
+		await broadcast_all({
+			'type'    : 'screen_status',
 			'id'      : client_id,
 			'enabled' : enabled
 		})
@@ -330,17 +391,31 @@ async def cleanup(client_id: str):
 		})
 
 
+@web.middleware
+async def no_cache_middleware(request: web.Request, handler):
+	'''Add no-cache headers to all responses'''
+	response = await handler(request)
+	# Add no-cache headers to static files (JS, CSS)
+	if request.path.startswith('/static/'):
+		response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+		response.headers['Pragma'] = 'no-cache'
+		response.headers['Expires'] = '0'
+	return response
+
+
 async def init_app():
 	'''Initialize the application'''
 
-	# Create the application
-	app = web.Application()
+	# Create the application with no-cache middleware
+	app = web.Application(middlewares=[no_cache_middleware])
 
 	# Add routes
 	app.router.add_get('/', index)
 	app.router.add_get('/ws', websocket_handler)
 	app.router.add_get('/api/captcha', get_captcha)
 	app.router.add_get('/api/config', get_config)
+	app.router.add_get('/api/users/count', get_user_count)
+	app.router.add_post('/api/leave', leave_handler)
 	app.router.add_static('/static/', 'static')
 
 	return app
