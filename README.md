@@ -87,14 +87,16 @@ loadmodule "websocket_common";
 - [ ] Low bandwidth mode
 
 ###### Bugs
-- [ ] ⚠️ IRC connection Chrome-based browsers not working *(Tested via Vandium browser on GrapheneOS and Chromium on Linux/Windows)*
+- [ ] Mute indiactors are not work. They sync on first connect but when someone (un)mutes, it does not detect it.
 - [ ] When you try to click something in the users menu, if someone speaks and hilights their name, it hijacks the click in the users menu *(reported by bombuzal)*
+- [ ] Trying to copy text in the chat box does not work as it activates the hotkey to hide/show the chat.
 
 ###### Mobile Issues
 - [ ] Hide the screen share button on mobile as it is pointless.
+- [ ] Dont start with user list open by default on mobile
 - [ ] Mobile users when they have someone maximized should see a horizontally scrolling list on the bottom of other cameras still, like how desktop mode does it.
 - [ ] Mobile users need to be able to scroll all the video shares in tile mode, they cant all fit on the screen when many people are on camera.
-- [ ] Dont start with user list open by default on mobile
+
 
 ###### Touchups
 - [ ] IRC channel +H history loading on connection
@@ -102,11 +104,9 @@ loadmodule "websocket_common";
 - [ ] Better captcha system to prevent bot abuse
 - [ ] Add a TEST button for the audio device selected in the user settings menu.
 - [ ] Move debug buton into user settings
-
-###### Anomalies
-- [ ] Javascript console in Firefox reports `WebRTC: ICE failed, see about:webrtc for more details`
-- [ ] Strange bug observed on Vandium on GrapheneOS mobile, I was unable to hear one specific person who joined after me. Rejoining fixed the issue, but my desktop thatw as connected the whole time didn't suffer from this issue.
-
+- [ ] Remove defcon/screen share hotkeys, add `shift+M` to mute sounds hotkey.
+- [ ] Hang up button to close the tab
+- [ ] User list & chatbox should be full sized when toggled on or off.
 
 ###### Fancy Pipe Dreams
 - [ ] Color picker to replace the green accent with your own color choice *(Remembered via cookies)*
