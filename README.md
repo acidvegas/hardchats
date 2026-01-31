@@ -85,16 +85,12 @@ loadmodule "websocket_common";
 ###### Features
 - [ ] End-to-end encryption
 - [ ] Low bandwidth mode
-    - This should turn lower the bitrate if incoming videos for you when enabled.
-    - This should lower the bitrate that you send your video aswell when enabled.
 
 ###### Bugs
 - [ ] ⚠️ IRC connection Chrome-based browsers not working *(Tested via Vandium browser on GrapheneOS and Chromium on Linux/Windows)*
 - [ ] When you try to click something in the users menu, if someone speaks and hilights their name, it hijacks the click in the users menu *(reported by bombuzal)*
-- [ ] Javascript console in Firefox reports `WebRTC: ICE failed, see about:webrtc for more details`
-- [ ] Strange bug observed on Vandium on GrapheneOS mobile, I was unable to hear one specific person who joined after me. Rejoining fixed the issue, but my desktop thatw as connected the whole time didn't suffer from this issue.
 
-###### Mobile
+###### Mobile Issues
 - [ ] Hide the screen share button on mobile as it is pointless.
 - [ ] Mobile users when they have someone maximized should see a horizontally scrolling list on the bottom of other cameras still, like how desktop mode does it.
 - [ ] Mobile users need to be able to scroll all the video shares in tile mode, they cant all fit on the screen when many people are on camera.
@@ -104,6 +100,13 @@ loadmodule "websocket_common";
 - [ ] IRC channel +H history loading on connection
 - [ ] Cleaner IRC chat *(hide server notices and redundant content)*
 - [ ] Better captcha system to prevent bot abuse
+- [ ] Add a TEST button for the audio device selected in the user settings menu.
+- [ ] Move debug buton into user settings
+
+###### Anomalies
+- [ ] Javascript console in Firefox reports `WebRTC: ICE failed, see about:webrtc for more details`
+- [ ] Strange bug observed on Vandium on GrapheneOS mobile, I was unable to hear one specific person who joined after me. Rejoining fixed the issue, but my desktop thatw as connected the whole time didn't suffer from this issue.
+
 
 ###### Fancy Pipe Dreams
 - [ ] Color picker to replace the green accent with your own color choice *(Remembered via cookies)*
