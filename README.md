@@ -100,6 +100,7 @@ loadmodule "websocket_common";
 - [ ] Dont start with user list open by default on mobile
 - [ ] Mobile users when they have someone maximized should see a horizontally scrolling list on the bottom of other cameras still, like how desktop mode does it.
 - [ ] Mobile users need to be able to fit all video tiles on the screen dynamically resizing it as the grid grows.
+- [ ] When you maximize a video on mobile then go back to tile mode, your own self camera becomes frozen.
 
 ###### Touchups
 - [ ] IRC channel +H history loading on connection
