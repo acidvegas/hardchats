@@ -73,6 +73,8 @@ listen {
 };
 ```
 
+**Note:** The `no-client-certificate` is required to allow Chrome based browsers to connect. This is not required for Firefox though.
+
 ###### Load required modules
 
 ```
