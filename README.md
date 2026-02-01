@@ -101,7 +101,6 @@ loadmodule "websocket_common";
 - [ ] Mobile users when they have someone maximized should see a horizontally scrolling list on the bottom of other cameras still, like how desktop mode does it.
 - [ ] Mobile users need to be able to fit all video tiles on the screen dynamically resizing it as the grid grows.
 
-
 ###### Touchups
 - [ ] IRC channel +H history loading on connection
 - [ ] Cleaner IRC chat *(hide server notices and redundant content)*
@@ -112,7 +111,6 @@ loadmodule "websocket_common";
 - [ ] Hang up button to close the tab
 - [ ] User list & chatbox should be full sized when toggled on or off.
 - [ ] Add `_` and `-` to allowed chars.
-
 
 ###### Fancy Pipe Dreams
 - [ ] Improve debug menu to show resource utilization of ram, cpu, inbound and outbound traffic, network information, connected duration, better live logs, able to toggle debug mode on or off to retain the last 5000 lines of logs so you can conduct actions when closing the debug menu and check back on the debug logs afterwards.
