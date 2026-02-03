@@ -18,7 +18,7 @@ TURN_SERVER = {
 	'host'       : '51.222.107.97',
 	'port'       : 3478,
 	'username'   : 'hardchats',
-	'credential' : 'somesecretpassword'
+	'credential' : 's1mps0nsfan420!'
 }
 ICE_TRANSPORT_POLICY = 'relay'
 
@@ -35,9 +35,9 @@ IRC_JOIN_DELAY      = 3000  # milliseconds (delay before joining channel)
 IRC_MAX_BACKLOG     = 5000  # max messages to keep in chat history
 
 
-# Helper function - Get client config as dict
 def get_client_config():
 	'''Returns configuration needed by the JavaScript client'''
+
 	return {
 		'version'     : VERSION,
 		'max_users'   : MAX_USERS,

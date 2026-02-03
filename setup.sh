@@ -2,84 +2,42 @@
 # HARDCHATS WebRTC Voice/Video Server - Developed by acidvegas (https://github.com/acidvegas/hardchats)
 # hardchats/setup.sh
 
-# Set xtrace, exit on error, & verbose mode
+
+# Load environment variables
+[ -f .env ] && source .env || { echo "Error: .env file not found"; exit 1; }
+
+# Set xtrace, exit on error, & verbose mode (after loading environment variables)
 set -xev
 
-# Install dependencies
-pip install -r requirements.txt
-
-# Get a certificate
-sudo certbot certonly --standalone -d hardchats.com
-
-# Create an NGINX config using tee
-sudo tee /etc/nginx/sites-available/hardchats.com.conf << EOF
-server {
-    listen 80;
-    listen [::]:80;
-    server_name dev.hardchats.com;
-
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
-    server_name dev.hardchats.com;
-
-    ssl_certificate     /etc/letsencrypt/live/hardchats.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/hardchats.com/privkey.pem;
-
-    location / {
-        proxy_pass http://127.0.0.1:58080;
-        proxy_http_version 1.1;
-
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
-}
-EOF
-
-# Link the config and reload NGINX
-sudo ln -sf /etc/nginx/sites-available/hardchats.com.conf /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
+# Remove existing docker container if it exists
+docker rm -f hardchats 2>/dev/null || true
 
 # Get public IP
 PUBLIC_IP=$(curl -4 -s https://maxmind.supernets.org/ | jq -rc .ip)
 
-# Install coturn
-sudo apt update && sudo apt install -y coturn
-
-# Enable coturn
-sudo sed -i 's/#TURNSERVER_ENABLED=1/TURNSERVER_ENABLED=1/' /etc/default/coturn
-
-# Generate random password
+# Create a turn password
 TURN_PASSWORD=$(openssl rand -hex 16)
 
-# Configure coturn
-sudo tee /etc/turnserver.conf << EOF
-listening-port=3478
-tls-listening-port=5349
-listening-ip=0.0.0.0
-external-ip=$PUBLIC_IP
-relay-ip=$PUBLIC_IP
-min-port=49152
-max-port=65535
-verbose
-fingerprint
-lt-cred-mech
-user=hardchats:$TURN_PASSWORD
-realm=hardchats
-no-cli
-EOF
+# Replace the password in the config.py file
+sed -i "s/credential: '[^']*'/credential: '$TURN_PASSWORD'/" config.py
 
-# Restart coturn
-sudo systemctl restart coturn && sudo systemctl enable coturn
 
-echo "Backup your TURN server password: $TURN_PASSWORD"
-echo "Edit your config.py file with the new TURN server password."
-echo "Start the server: python3 server.py"
+cat << EOF > turnserver.conf
+echo "listening-port=3478" > /etc/turnserver.conf && \
+    echo "tls-listening-port=5349" >> /etc/turnserver.conf && \
+    echo "listening-ip=0.0.0.0" >> /etc/turnserver.conf && \
+    echo "external-ip=$PUBLIC_IP" >> /etc/turnserver.conf && \
+    echo "relay-ip=$PUBLIC_IP" >> /etc/turnserver.conf && \
+    echo "min-port=49152" >> /etc/turnserver.conf && \
+    echo "max-port=65535" >> /etc/turnserver.conf && \
+    echo "verbose" >> /etc/turnserver.conf && \
+    echo "fingerprint" >> /etc/turnserver.conf && \
+    echo "lt-cred-mech" >> /etc/turnserver.conf && \
+    echo "user=hardchats:$TURN_PASSWORD" >> /etc/turnserver.conf && \
+    echo "realm=hardchats" >> /etc/turnserver.conf'
+
+# Run the Docker container
+docker run -d --name hardchats --restart unless-stopped --network host hardchats
+
+# Create the turn server config file in the docker container without using a bunch of && staments, do it cleanly
+docker exec -it hardchats sh -c 
