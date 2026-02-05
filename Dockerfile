@@ -4,9 +4,6 @@
 # Use minimal Python alpine image
 FROM python:3.12-alpine
 
-# Install coturn
-RUN apk add --no-cache coturn
-
 # Set working directory
 WORKDIR /app
 
@@ -24,5 +21,5 @@ COPY config.py .
 COPY server.py .
 COPY static/ static/
 
-# Start script that configures coturn and runs services
-CMD sh -c 'turnserver -c /etc/turnserver.conf & python3 server.py'
+# Start the Python server
+CMD ["python3", "server.py"]
