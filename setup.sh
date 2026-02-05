@@ -23,13 +23,12 @@ PUBLIC_IP=$(curl -4 -s https://maxmind.supernets.org/ | jq -rc .ip)
 docker run -d \
   --name coturn \
   --restart unless-stopped \
-  -p 3478:3478 \
-  -p 5349:5349 \
-  -p 60000-60499:60000-60499/udp \
+  --network host \
   instrumentisto/coturn \
   -n \
   --listening-port=${TURN_PORT} \
-  --listening-ip=0.0.0.0 \
+  --listening-ip=${PUBLIC_IP} \
+  --relay-ip=${PUBLIC_IP} \
   --external-ip=${PUBLIC_IP} \
   --min-port=60000 \
   --max-port=60499 \
@@ -37,9 +36,19 @@ docker run -d \
   --lt-cred-mech \
   --user=${TURN_USERNAME}:${TURN_PASSWORD} \
   --realm=${TURN_REALM} \
-  --verbose \
   --no-tls \
-  --no-dtls
+  --no-dtls \
+  --no-cli \
+  --log-file=stdout
 
 # Run hardchats container
-docker run -d --name hardchats --restart unless-stopped -p 127.0.0.1:58080:58080 hardchats
+docker run -d --name hardchats --restart unless-stopped -p 127.0.0.1:58080:58080 \
+  -e IRC_SERVER=${IRC_SERVER} \
+  -e IRC_PORT=${IRC_PORT} \
+  -e IRC_CHANNEL=${IRC_CHANNEL} \
+  -e TURN_SERVER=${TURN_SERVER} \
+  -e TURN_PORT=${TURN_PORT} \
+  -e TURN_USERNAME=${TURN_USERNAME} \
+  -e TURN_PASSWORD=${TURN_PASSWORD} \
+  -e TURN_REALM=${TURN_REALM} \
+  hardchats
