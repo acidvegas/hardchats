@@ -24,8 +24,5 @@ COPY config.py .
 COPY server.py .
 COPY static/ static/
 
-# Expose ports
-EXPOSE 58080 3478 49152-65535/udp
-
 # Start script that configures coturn and runs services
 CMD sh -c 'turnserver -c /etc/turnserver.conf & python3 server.py'

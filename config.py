@@ -2,6 +2,18 @@
 # HARDCHATS WebRTC Voice/Video Server - Developed by acidvegas (https://github.com/acidvegas/hardchats)
 # hardchats/config.py
 
+import os
+
+# Load environment variables if .env file exists (otherwise set by Docker -e flags)
+if os.path.exists('.env'):
+	try:
+		from dotenv import load_dotenv
+	except ImportError:
+		raise ImportError('missing python-dotenv library (pip install python-dotenv)')
+	else:
+		load_dotenv()
+
+
 # Version
 VERSION = '1.0.0'
 
@@ -11,23 +23,22 @@ SERVER_PORT = 58080
 MAX_USERS   = 25
 MAX_CAMERAS = 10
 
-
 # TURN/STUN settings
-STUN_SERVER = 'stun:51.222.107.97:3478'
+STUN_SERVER = f'stun:{os.getenv('TURN_SERVER')}:{os.getenv('TURN_PORT')}'
 TURN_SERVER = {
-	'host'       : '51.222.107.97',
-	'port'       : 3478,
-	'username'   : 'hardchats',
-	'credential' : 's1mps0nsfan420!'
+	'host'       : os.getenv('TURN_SERVER'),
+	'port'       : os.getenv('TURN_PORT'),
+	'username'   : os.getenv('TURN_USERNAME'),
+	'credential' : os.getenv('TURN_PASSWORD')
 }
 ICE_TRANSPORT_POLICY = 'relay'
 
 
 # IRC settings
-IRC_SERVER          = 'wss://irc.supernets.org:7000'
-IRC_CHANNEL         = '#hardchats'
+IRC_SERVER          = f'wss://{os.getenv('IRC_SERVER')}:{os.getenv('IRC_PORT')}'
+IRC_CHANNEL         = f'#{os.getenv('IRC_CHANNEL')}'
 IRC_PROTOCOLS       = ['text.ircv3.net', 'binary.ircv3.net']
-IRC_USER            = 'hardchatter'
+IRC_USER            = 'yapper'
 IRC_REALNAME        = 'https://dev.hardchats.com/'
 IRC_MAX_NICK_LENGTH = 20
 IRC_RECONNECT_DELAY = 15000 # milliseconds

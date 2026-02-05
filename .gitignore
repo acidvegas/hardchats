@@ -5,6 +5,3 @@
 __pycache__/
 .env
 logs/
-.log
-*.log.html
-turnserver.conf
