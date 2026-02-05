@@ -26,11 +26,9 @@ docker run -d \
   -p 3478:3478 \
   -p 5349:5349 \
   -p 60000-60499:60000-60499/udp \
-  -v /etc/letsencrypt/live/${TURN_SERVER}:/etc/letsencrypt/live/${TURN_SERVER}:ro \
   instrumentisto/coturn \
   -n \
-  --listening-port=3478 \
-  --tls-listening-port=5349 \
+  --listening-port=${TURN_PORT} \
   --listening-ip=0.0.0.0 \
   --external-ip=${PUBLIC_IP} \
   --min-port=60000 \
@@ -40,7 +38,8 @@ docker run -d \
   --user=${TURN_USERNAME}:${TURN_PASSWORD} \
   --realm=${TURN_REALM} \
   --verbose \
-  --cert=/etc/letsencrypt/live/${TURN_SERVER}/fullchain.pem --pkey=/etc/letsencrypt/live/${TURN_SERVER}/privkey.pem
+  --no-tls \
+  --no-dtls
 
 # Run hardchats container
 docker run -d --name hardchats --restart unless-stopped -p 127.0.0.1:58080:58080 hardchats

@@ -27,12 +27,12 @@ function getIceServers() {
 	return [
 		{ urls: TURN_CONFIG.stun.urls },
 		{
-			urls: `turns:${TURN_CONFIG.turn.host}:${TURN_CONFIG.turn.port}`,
+			urls: `turn:${TURN_CONFIG.turn.host}:${TURN_CONFIG.turn.port}`,
 			username: TURN_CONFIG.turn.username,
 			credential: TURN_CONFIG.turn.credential
 		},
 		{
-			urls: `turns:${TURN_CONFIG.turn.host}:${TURN_CONFIG.turn.port}?transport=tcp`,
+			urls: `turn:${TURN_CONFIG.turn.host}:${TURN_CONFIG.turn.port}?transport=tcp`,
 			username: TURN_CONFIG.turn.username,
 			credential: TURN_CONFIG.turn.credential
 		}
