@@ -4,6 +4,7 @@
 
 import logging
 import random
+import secrets
 import time
 import string
 import uuid
@@ -22,11 +23,12 @@ import config
 
 
 # Globals
-clients       = {} # client_id -> {ws, username, cam_on, mic_on, screen_on}
-captchas      = {} # captcha_id -> {answer, expires}
-session_start = None
+clients          = {} # client_id -> {ws, username, cam_on, mic_on, screen_on}
+captchas         = {} # captcha_id -> {answer, expires}
+reconnect_tokens = {} # token -> {username, expires}
+session_start    = None
 
-ALLOWED_CHARS  = string.ascii_letters + string.digits
+ALLOWED_CHARS  = string.ascii_letters + string.digits + '_-'
 
 
 def generate_captcha():
@@ -89,7 +91,7 @@ def verify_captcha(captcha_id: str, user_answer: str) -> bool:
 
 
 def cleanup_captchas():
-	'''Cleanup expired captchas'''
+	'''Cleanup expired captchas and reconnect tokens'''
 
 	# Get current time
 	now = time.time()
@@ -100,6 +102,11 @@ def cleanup_captchas():
 	# Delete expired captchas
 	for k in expired:
 		del captchas[k]
+
+	# Cleanup expired reconnect tokens
+	expired_tokens = [k for k, v in reconnect_tokens.items() if now > v['expires']]
+	for k in expired_tokens:
+		del reconnect_tokens[k]
 
 
 def get_camera_count() -> int:
@@ -116,9 +123,9 @@ async def index(request: web.Request) -> web.Response:
 			text=f.read(), 
 			content_type='text/html',
 			headers={
-				'Cache-Control': 'no-cache, no-store, must-revalidate',
-				'Pragma': 'no-cache',
-				'Expires': '0'
+				'Cache-Control' : 'no-cache, no-store, must-revalidate',
+				'Pragma'        : 'no-cache',
+				'Expires'       : '0'
 			}
 		)
 
@@ -230,8 +237,8 @@ async def handle_message(client_id: str, data: dict):
 			return
 
 		username = data.get('username', '').strip()
-		if not all(c in ALLOWED_CHARS for c in username) or len(username) > 20:
-			await clients[client_id]['ws'].send_json({'type': 'error', 'message': 'Invalid username. Use 1-20 printable characters.'})
+		if not username or username[0].isdigit() or not all(c in ALLOWED_CHARS for c in username) or len(username) > 20:
+			await clients[client_id]['ws'].send_json({'type': 'error', 'message': 'Invalid username. Must start with a letter, 1-20 characters (letters, numbers, underscore).'})
 			return
 
 		# Check for duplicate username (case-insensitive)
@@ -252,6 +259,10 @@ async def handle_message(client_id: str, data: dict):
 
 		logging.info(f'[{client_id}] Joined as {username}')
 
+		# Generate reconnect token for this user
+		reconnect_token = secrets.token_urlsafe(32)
+		reconnect_tokens[reconnect_token] = {'username': username, 'expires': time.time() + 3600}
+
 		users = [
 			{'id': cid, 'username': c['username'], 'cam_on': c.get('cam_on', False), 'mic_on': c.get('mic_on', True), 'screen_on': c.get('screen_on', False)}
 			for cid, c in clients.items()
@@ -259,11 +270,75 @@ async def handle_message(client_id: str, data: dict):
 		]
 
 		await clients[client_id]['ws'].send_json({
-			'type'          : 'users',
-			'users'         : users,
-			'you'           : client_id,
-			'session_start' : session_start,
-			'max_cameras'   : config.MAX_CAMERAS
+			'type'            : 'users',
+			'users'           : users,
+			'you'             : client_id,
+			'session_start'   : session_start,
+			'max_cameras'     : config.MAX_CAMERAS,
+			'reconnect_token' : reconnect_token
+		})
+
+		await broadcast(client_id, {
+			'type'     : 'user_joined',
+			'id'       : client_id,
+			'username' : username,
+			'mic_on'   : clients[client_id].get('mic_on', True),
+			'cam_on'   : clients[client_id].get('cam_on', False),
+			'screen_on': clients[client_id].get('screen_on', False)
+		})
+
+	elif msg_type == 'reconnect':
+		token = data.get('token')
+
+		# Validate reconnect token
+		if not token or token not in reconnect_tokens:
+			await clients[client_id]['ws'].send_json({'type': 'error', 'message': 'Invalid reconnect token'})
+			return
+
+		token_data = reconnect_tokens[token]
+		if time.time() > token_data['expires']:
+			del reconnect_tokens[token]
+			await clients[client_id]['ws'].send_json({'type': 'error', 'message': 'Reconnect token expired'})
+			return
+
+		username = token_data['username']
+		del reconnect_tokens[token]  # Consume the old token
+
+		# Check for duplicate username (skip if it's the same user reconnecting)
+		for cid, c in clients.items():
+			if cid != client_id and c['username'] and c['username'].lower() == username.lower():
+				await clients[client_id]['ws'].send_json({'type': 'error', 'message': 'Username already in use'})
+				return
+
+		active_users = len([c for c in clients.values() if c['username']])
+		if active_users >= config.MAX_USERS:
+			await clients[client_id]['ws'].send_json({'type': 'error', 'message': 'Room is full'})
+			return
+
+		clients[client_id]['username'] = username
+
+		if session_start is None:
+			session_start = time.time()
+
+		logging.info(f'[{client_id}] Reconnected as {username}')
+
+		# Generate a new reconnect token
+		new_token = secrets.token_urlsafe(32)
+		reconnect_tokens[new_token] = {'username': username, 'expires': time.time() + 3600}
+
+		users = [
+			{'id': cid, 'username': c['username'], 'cam_on': c.get('cam_on', False), 'mic_on': c.get('mic_on', True), 'screen_on': c.get('screen_on', False)}
+			for cid, c in clients.items()
+			if c['username'] and cid != client_id
+		]
+
+		await clients[client_id]['ws'].send_json({
+			'type'            : 'users',
+			'users'           : users,
+			'you'             : client_id,
+			'session_start'   : session_start,
+			'max_cameras'     : config.MAX_CAMERAS,
+			'reconnect_token' : new_token
 		})
 
 		await broadcast(client_id, {
@@ -424,6 +499,7 @@ async def init_app():
 	app.router.add_static('/static/', 'static')
 
 	return app
+
 
 
 if __name__ == '__main__':

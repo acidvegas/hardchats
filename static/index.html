@@ -22,7 +22,7 @@
 		<div class="login-box">
 			<h1 class="glitch" data-text="HARDCHATS">HARDCHATS</h1>
 			<p id="user-count-home" class="user-count-home">Loading...</p>
-			<input type="text" id="username" placeholder="Enter your handle" maxlength="20" autocomplete="off" spellcheck="false">
+			<input type="text" id="username" placeholder="Enter your handle" maxlength="20" autocomplete="off" spellcheck="false" pattern="[a-zA-Z_][a-zA-Z0-9_]*">
 			
 			<div class="captcha-box">
 				<span id="captcha-question">Loading...</span>
@@ -198,13 +198,12 @@
 						</svg>
 						Microphone
 					</label>
-					<select id="mic-select"></select>
-					<div class="mic-level-container">
-						<div id="mic-level-meter" class="mic-level-meter">
-							<div id="mic-level-fill" class="mic-level-fill"></div>
-						</div>
-						<span id="mic-level-label" class="mic-level-label">Mic level</span>
+				<select id="mic-select"></select>
+				<div class="mic-level-container">
+					<div id="mic-level-meter" class="mic-level-meter">
+						<div id="mic-level-fill" class="mic-level-fill"></div>
 					</div>
+				</div>
 				</div>
 				<div class="settings-group">
 					<label for="speaker-select">
@@ -313,8 +312,15 @@
 		</a>
 	</footer>
 	
-	<script src="/static/turn.js"></script>
-	<script src="/static/client.js"></script>
-	<script src="/static/irc.js"></script>
+	<script src="/static/js/state.js"></script>
+	<script src="/static/js/debug.js"></script>
+	<script src="/static/js/turn.js"></script>
+	<script src="/static/js/notifications.js"></script>
+	<script src="/static/js/settings.js"></script>
+	<script src="/static/js/ui.js"></script>
+	<script src="/static/js/webrtc.js"></script>
+	<script src="/static/js/media.js"></script>
+	<script src="/static/js/irc.js"></script>
+	<script src="/static/js/client.js"></script>
 </body>
 </html>

@@ -36,7 +36,7 @@ ICE_TRANSPORT_POLICY = 'relay'
 
 # IRC settings
 IRC_SERVER          = f'wss://{os.getenv('IRC_SERVER')}:{os.getenv('IRC_PORT')}'
-IRC_CHANNEL         = f'#{os.getenv('IRC_CHANNEL')}'
+IRC_CHANNEL         = os.getenv('IRC_CHANNEL')
 IRC_PROTOCOLS       = ['text.ircv3.net', 'binary.ircv3.net']
 IRC_USER            = 'yapper'
 IRC_REALNAME        = 'https://hardchats.com/'

@@ -726,6 +726,10 @@ body {
 	color: var(--danger);
 }
 
+.irc-msg.history {
+	opacity: 0.75;
+}
+
 .irc-msg a {
 	color: var(--acid);
 	text-decoration: none;
@@ -1163,6 +1167,8 @@ body {
 	padding: 1.5rem;
 	width: 100%;
 	max-width: 320px;
+	max-height: calc(100vh - 2rem);
+	overflow-y: auto;
 }
 
 .modal-content h3 {
@@ -1222,17 +1228,20 @@ body {
 
 /* ========== SETTINGS MODAL ========== */
 .settings-modal {
-	max-width: 380px;
+	max-width: 340px;
+	max-height: calc(100vh - 2rem);
+	overflow-y: auto;
+	padding: 1.25rem;
 }
 
-.settings-modal .modal-header {
+.modal-header {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	margin-bottom: 1.25rem;
+	margin-bottom: 1rem;
 }
 
-.settings-modal .modal-header h3 {
+.modal-header h3 {
 	margin: 0;
 	font-size: 1.1rem;
 }
@@ -1262,7 +1271,7 @@ body {
 }
 
 .settings-group {
-	margin-bottom: 1rem;
+	margin-bottom: 0.75rem;
 }
 
 .settings-group label {
@@ -1283,12 +1292,12 @@ body {
 
 .settings-group select {
 	width: 100%;
-	padding: 0.75rem 1rem;
+	padding: 0.5rem 0.75rem;
 	background: var(--bg-primary);
 	border: 1px solid var(--border);
-	border-radius: 8px;
+	border-radius: 6px;
 	color: var(--text-primary);
-	font-size: 0.875rem;
+	font-size: 0.8rem;
 	font-family: inherit;
 	outline: none;
 	cursor: pointer;
@@ -1296,8 +1305,8 @@ body {
 	appearance: none;
 	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
 	background-repeat: no-repeat;
-	background-position: right 1rem center;
-	padding-right: 2.5rem;
+	background-position: right 0.75rem center;
+	padding-right: 2rem;
 }
 
 .settings-group select:focus {
@@ -1312,9 +1321,10 @@ body {
 .settings-preview {
 	background: var(--bg-primary);
 	border: 1px solid var(--border);
-	border-radius: 8px;
+	border-radius: 6px;
 	aspect-ratio: 16 / 9;
-	margin-bottom: 1rem;
+	max-height: 140px;
+	margin-bottom: 0.75rem;
 	overflow: hidden;
 	position: relative;
 }
@@ -1348,17 +1358,17 @@ body {
 }
 
 .settings-section {
-	margin-bottom: 1.25rem;
+	margin-bottom: 1rem;
 }
 
 .settings-section h4 {
-	font-size: 0.75rem;
+	font-size: 0.7rem;
 	font-weight: 600;
 	text-transform: uppercase;
 	letter-spacing: 0.05em;
 	color: var(--text-muted);
-	margin-bottom: 0.75rem;
-	padding-bottom: 0.5rem;
+	margin-bottom: 0.5rem;
+	padding-bottom: 0.375rem;
 	border-bottom: 1px solid var(--border);
 }
 
@@ -1366,7 +1376,7 @@ body {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	padding: 0.625rem 0;
+	padding: 0.4rem 0;
 }
 
 .settings-toggle label {
@@ -1490,11 +1500,23 @@ body {
 	
 	.control-btn { width: 44px; height: 44px; }
 	.control-btn svg { width: 18px; height: 18px; }
+
+	/* Hide screen share on mobile — not useful on touch devices */
+	#screen-btn { display: none !important; }
 	
 	.thumbnail { width: 100px; height: 56px; }
 	
 	.captcha-box { flex-wrap: wrap; }
 	.captcha-box #captcha-question { width: 100%; text-align: center; margin-bottom: 0.5rem; }
+	
+	.settings-modal {
+		max-width: calc(100vw - 2rem);
+		padding: 1rem;
+	}
+	
+	.settings-preview {
+		max-height: 100px;
+	}
 }
 
 @media (max-width: 480px) {
@@ -1581,17 +1603,14 @@ button:focus-visible, input:focus-visible {
 
 /* ========== MIC LEVEL METER ========== */
 .mic-level-container {
-	display: flex;
-	align-items: center;
-	gap: 8px;
 	margin-top: 8px;
 }
 
 .mic-level-meter {
-	flex: 1;
-	height: 8px;
+	width: 100%;
+	height: 6px;
 	background: var(--bg-tertiary);
-	border-radius: 4px;
+	border-radius: 3px;
 	overflow: hidden;
 	border: 1px solid var(--border);
 }
@@ -1601,18 +1620,13 @@ button:focus-visible, input:focus-visible {
 	width: 0%;
 	background: linear-gradient(90deg, var(--acid), #4ade80);
 	transition: width 0.05s ease-out;
-	border-radius: 4px;
+	border-radius: 3px;
 }
 
 .mic-level-fill.high {
 	background: linear-gradient(90deg, #f59e0b, #ef4444);
 }
 
-.mic-level-label {
-	font-size: 11px;
-	color: var(--text-muted);
-	white-space: nowrap;
-}
 
 /* ========== DEBUG BUTTON ========== */
 .debug-btn {
@@ -1658,6 +1672,10 @@ button:focus-visible, input:focus-visible {
 	max-height: 80vh;
 	display: flex;
 	flex-direction: column;
+}
+
+.debug-modal .modal-header {
+	flex-shrink: 0;
 }
 
 .debug-content {

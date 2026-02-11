@@ -88,34 +88,16 @@ loadmodule "websocket_common";
 - [ ] End-to-end encryption
 - [ ] Low bandwidth mode
 
-###### Bugs
-- [ ] Mute indiactors are not working. They sync on first connect but when someone (un)mutes, it does not detect it.
-- [ ] When you try to click something in the users menu, if someone speaks and hilights their name, it hijacks the click in the users menu *(reported by bombuzal)*
-- [ ] Trying to copy text in the chat box does not work as it activates the hotkey to hide/show the chat.
-- [ ] When a person closes their tab, their user is not instantly removed from the user list. Console shows an attempt at renegotiating. Need to make it instant.
-- [ ] Names have to start with a letter because IRC wont allow names starting with a number *(reported by incog)*
-- [ ] Strange bug where some people wont be able to see or hear a sdingle person until they rejoin....sync state issue.
-- [ ] When a user shares their camera, their microphone stops working for the rest of the call, even when screen share is turned off, the users microphone will not work *(reported by blowfish)*
-
 ###### Mobile Issues
-- [ ] Hide the screen share button on mobile as it is pointless.
 - [ ] Dont start with user list open by default on mobile
-- [ ] Mobile users when they have someone maximized should see a horizontally scrolling list on the bottom of other cameras still, like how desktop mode does it.
-- [ ] Mobile users need to be able to fit all video tiles on the screen dynamically resizing it as the grid grows.
-- [ ] When you maximize a video on mobile then go back to tile mode, your own self camera becomes frozen.
-- [ ] Audio sometimes not working on Mobile?
+- [ ] User list & chatbox should be full sized when toggled on or off.
+- [ ] Hang up button to close the tab
 
 ###### Touchups
-- [ ] IRC channel +H history loading on connection
 - [ ] Cleaner IRC chat *(hide server notices and redundant content)*
 - [ ] Better captcha system to prevent bot abuse
 - [ ] Add a TEST button for the audio device selected in the user settings menu.
 - [ ] Move debug buton into user settings
-- [ ] Remove defcon/screen share hotkeys, add `shift+M` to mute sounds hotkey.
-- [ ] Hang up button to close the tab
-- [ ] User list & chatbox should be full sized when toggled on or off.
-- [ ] Add `_` and `-` to allowed chars.
-- [ ] Option to flip camera in settings
 
 ###### Fancy Pipe Dreams
 - [ ] Improve debug menu to show resource utilization of ram, cpu, inbound and outbound traffic, network information, connected duration, better live logs, able to toggle debug mode on or off to retain the last 5000 lines of logs so you can conduct actions when closing the debug menu and check back on the debug logs afterwards.

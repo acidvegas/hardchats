@@ -12,6 +12,15 @@ const IRC_COOLDOWN_SECONDS = 10;
 const IRC_MAX_MESSAGES_PER_SECOND = 3;
 let ircMessageTimestamps = [];
 
+// IRCv3 CAP negotiation and batch state
+let ircv3 = {
+	capNegotiating: false,
+	availableCaps: [],
+	enabledCaps: [],
+	batches: {},
+	capTimeout: null
+};
+
 // Nick colors (max 100 to prevent memory exhaustion)
 const IRC_MAX_NICK_COLORS = 100;
 const nickColorCache = new Map();
@@ -46,6 +55,16 @@ function getNickColor(nick) {
 
 	nickColorCache.set(nick, color);
 	return color;
+}
+
+// Unescape IRCv3 tag values
+function unescapeTagValue(value) {
+	return value
+		.replace(/\\:/g, ';')
+		.replace(/\\s/g, ' ')
+		.replace(/\\\\/g, '\\')
+		.replace(/\\r/g, '\r')
+		.replace(/\\n/g, '\n');
 }
 
 // Load IRC config from server
@@ -203,9 +222,10 @@ function connectIrc() {
 		return;
 	}
 
-	// Sanitize nickname for IRC (alphanumeric, max length from config)
+	// Sanitize nickname for IRC (alphanumeric + underscore, must not start with digit)
 	let nick = state.username.replace(/[^a-zA-Z0-9_\-\[\]\\^{}|`]/g, '');
 	if (!nick || nick.length === 0) nick = 'User';
+	if (/^\d/.test(nick)) nick = '_' + nick;
 	nick = nick.substring(0, IRC_CONFIG.maxNickLength);
 	state.irc.nick = nick;
 
@@ -226,9 +246,26 @@ function connectIrc() {
 			console.log('[IRC] Protocol selected:', state.irc.ws.protocol);
 			console.log('[IRC] Extensions:', state.irc.ws.extensions);
 			console.log('[IRC] Binary type:', state.irc.ws.binaryType);
-			// Send IRC registration
+
+			// Reset IRCv3 state
+			ircv3.capNegotiating = true;
+			ircv3.availableCaps = [];
+			ircv3.enabledCaps = [];
+			ircv3.batches = {};
+
+			// Start IRCv3 CAP negotiation before registration
+			ircSend('CAP LS 302');
 			ircSend(`NICK ${state.irc.nick}`);
 			ircSend(`USER ${IRC_CONFIG.user} 0 * :${IRC_CONFIG.realname}`);
+
+			// Timeout: if CAP negotiation takes too long, end it
+			ircv3.capTimeout = setTimeout(() => {
+				if (ircv3.capNegotiating) {
+					console.warn('[IRC] CAP negotiation timed out, sending CAP END');
+					ircSend('CAP END');
+					ircv3.capNegotiating = false;
+				}
+			}, 5000);
 		};
 
 		state.irc.ws.onmessage = (e) => {
@@ -255,7 +292,7 @@ function connectIrc() {
 			$('irc-input').disabled = true;
 			$('irc-send').disabled = true;
 
-			// Don't show messages if intentional disconnect
+			// Don't show messages or reconnect if intentional disconnect
 			if (state.irc.intentionalDisconnect) {
 				state.irc.intentionalDisconnect = false;
 				return;
@@ -279,6 +316,17 @@ function connectIrc() {
 				default: if (e.reason) msg = `Disconnected: ${e.reason}`;
 			}
 			addIrcMessage('system', msg);
+
+			// Auto-reconnect after configured delay
+			if (IRC_CONFIG?.reconnectDelay) {
+				const delaySec = IRC_CONFIG.reconnectDelay / 1000;
+				addIrcMessage('system', `Reconnecting in ${delaySec} seconds...`);
+				setTimeout(() => {
+					if (!state.irc.intentionalDisconnect && !state.irc.ws && state.username) {
+						connectIrc();
+					}
+				}, IRC_CONFIG.reconnectDelay);
+			}
 		};
 
 		state.irc.ws.onerror = (err) => {
@@ -314,6 +362,24 @@ function ircSend(data) {
 
 function handleIrcMessage(line) {
 	console.log('[IRC] <', line);
+
+	// Parse IRCv3 message tags (@tag1=value1;tag2=value2)
+	let tags = {};
+	if (line.startsWith('@')) {
+		const tagEnd = line.indexOf(' ');
+		if (tagEnd > 0) {
+			const tagStr = line.substring(1, tagEnd);
+			tagStr.split(';').forEach(t => {
+				const eq = t.indexOf('=');
+				if (eq >= 0) {
+					tags[t.substring(0, eq)] = unescapeTagValue(t.substring(eq + 1));
+				} else {
+					tags[t] = true;
+				}
+			});
+			line = line.substring(tagEnd + 1).trimStart();
+		}
+	}
 
 	// Handle PING - must echo back the exact token
 	// Format: PING :token or PING token
@@ -356,6 +422,83 @@ function handleIrcMessage(line) {
 	const nick = prefix.split('!')[0];
 
 	switch (command) {
+		case 'CAP': {
+			// IRCv3 capability negotiation
+			// params: [client, subcommand, ...args]
+			const capSubcmd = params[1];
+
+			if (capSubcmd === 'LS') {
+				// Multiline: params = [client, "LS", "*", "cap1 cap2 ..."]
+				// Final:     params = [client, "LS", "cap1 cap2 ..."]
+				const isMultiLine = params.length > 3 && params[2] === '*';
+				const capList = params[params.length - 1].split(' ').map(c => c.split('=')[0]);
+				ircv3.availableCaps.push(...capList);
+
+				if (!isMultiLine) {
+					// All caps received, request what we want
+					const wantedCaps = ['batch', 'chathistory', 'draft/chathistory', 'server-time', 'message-tags']
+						.filter(c => ircv3.availableCaps.includes(c));
+
+					console.log('[IRC] Available caps:', ircv3.availableCaps.join(', '));
+					console.log('[IRC] Requesting caps:', wantedCaps.join(', '));
+
+					if (wantedCaps.length > 0) {
+						ircSend(`CAP REQ :${wantedCaps.join(' ')}`);
+					} else {
+						ircSend('CAP END');
+						ircv3.capNegotiating = false;
+						if (ircv3.capTimeout) { clearTimeout(ircv3.capTimeout); ircv3.capTimeout = null; }
+					}
+				}
+			} else if (capSubcmd === 'ACK') {
+				const ackedCaps = params[params.length - 1].split(' ').filter(c => c.length > 0);
+				ircv3.enabledCaps = ackedCaps;
+				console.log('[IRC] CAP ACK:', ackedCaps.join(', '));
+				ircSend('CAP END');
+				ircv3.capNegotiating = false;
+				if (ircv3.capTimeout) { clearTimeout(ircv3.capTimeout); ircv3.capTimeout = null; }
+			} else if (capSubcmd === 'NAK') {
+				console.warn('[IRC] CAP NAK:', params[params.length - 1]);
+				ircSend('CAP END');
+				ircv3.capNegotiating = false;
+				if (ircv3.capTimeout) { clearTimeout(ircv3.capTimeout); ircv3.capTimeout = null; }
+			}
+			break;
+		}
+
+		case 'BATCH': {
+			// IRCv3 BATCH mechanism
+			const batchRef = params[0];
+
+			if (batchRef.startsWith('+')) {
+				// Batch start: BATCH +refid type [target]
+				const batchId = batchRef.substring(1);
+				const batchType = params[1] || '';
+				const batchTarget = params[2] || '';
+				ircv3.batches[batchId] = { type: batchType, target: batchTarget, messages: [] };
+				console.log(`[IRC] Batch started: ${batchId} type=${batchType} target=${batchTarget}`);
+			} else if (batchRef.startsWith('-')) {
+				// Batch end: BATCH -refid
+				const batchId = batchRef.substring(1);
+				const batch = ircv3.batches[batchId];
+				if (batch) {
+					if (batch.type === 'chathistory') {
+						// Display all history messages
+						if (batch.messages.length > 0) {
+							addIrcMessage('system', `── Channel History (${batch.messages.length} messages) ──`);
+							batch.messages.forEach(msg => {
+								addIrcMessage('chat', msg.text, msg.nick, msg.nick === state.irc.nick, msg.time);
+							});
+							addIrcMessage('system', '── End of History ──');
+						}
+					}
+					delete ircv3.batches[batchId];
+					console.log(`[IRC] Batch ended: ${batchId}`);
+				}
+			}
+			break;
+		}
+
 		case '001': // RPL_WELCOME - Successfully registered
 			state.irc.connected = true;
 			updateIrcStatus('connected');
@@ -369,7 +512,7 @@ function handleIrcMessage(line) {
 			}, IRC_CONFIG.joinDelay);
 			break;
 
-		case '433': // ERR_NICKNAMEINUSE
+		case '433': { // ERR_NICKNAMEINUSE
 			// Add 4 random digits, truncate base nick to fit within max length
 			const baseNick = state.irc.nick.replace(/\d{4}$/, '').substring(0, IRC_CONFIG.maxNickLength - 4);
 			const suffix = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
@@ -377,6 +520,7 @@ function handleIrcMessage(line) {
 			addIrcMessage('system', `Nick in use, trying ${state.irc.nick}`);
 			ircSend(`NICK ${state.irc.nick}`);
 			break;
+		}
 
 		case 'JOIN':
 			if (nick === state.irc.nick) {
@@ -390,33 +534,50 @@ function handleIrcMessage(line) {
 					addIrcMessage('system', `Joined ${IRC_CONFIG.channel}`);
 					$('irc-input').disabled = false;
 					$('irc-send').disabled = false;
+
+					// Request channel history if chathistory cap is enabled
+					const hasChathistory = ircv3.enabledCaps.includes('chathistory') || ircv3.enabledCaps.includes('draft/chathistory');
+					if (hasChathistory) {
+						console.log('[IRC] Requesting channel history...');
+						ircSend(`CHATHISTORY LATEST ${IRC_CONFIG.channel} * 50`);
+					}
 				}
 			}
 			// We don't show other users' join messages
 			break;
 
-		case 'PRIVMSG':
+		case 'PRIVMSG': {
 			const target = params[0];
 			const message = params[1];
 			if (target.toLowerCase() === IRC_CONFIG.channel.toLowerCase()) {
-				const isSelf = nick === state.irc.nick;
-				addIrcMessage('chat', message, nick, isSelf);
+				// Check if this message is part of a batch (e.g. chathistory)
+				if (tags.batch && ircv3.batches[tags.batch]) {
+					ircv3.batches[tags.batch].messages.push({
+						nick: nick,
+						text: message,
+						time: tags.time || null
+					});
+				} else {
+					const isSelf = nick === state.irc.nick;
+					addIrcMessage('chat', message, nick, isSelf);
 
-				// Update unread count if sidebar is closed
-				if (!state.irc.sidebarOpen && !isSelf) {
-					state.irc.unreadCount++;
-					updateIrcBadge();
+					// Update unread count if sidebar is closed
+					if (!state.irc.sidebarOpen && !isSelf) {
+						state.irc.unreadCount++;
+						updateIrcBadge();
 
-					// Notification and sound for chat messages
-					if (typeof showNotification === 'function') {
-						showNotification(`${nick} in ${IRC_CONFIG.channel}`, message, 'irc-message');
-					}
-					if (typeof playSound === 'function') {
-						playSound('message');
+						// Notification and sound for chat messages
+						if (typeof showNotification === 'function') {
+							showNotification(`${nick} in ${IRC_CONFIG.channel}`, message, 'irc-message');
+						}
+						if (typeof playSound === 'function') {
+							playSound('message');
+						}
 					}
 				}
 			}
 			break;
+		}
 
 		case 'NOTICE':
 			// Show notices but not server spam
@@ -446,7 +607,7 @@ function handleIrcMessage(line) {
 			}
 			break;
 
-		case 'INVITE':
+		case 'INVITE': {
 			// params[0] = our nick, params[1] = channel
 			const inviteChannel = params[1];
 			addIrcMessage('system', `Invited to ${inviteChannel} by ${nick}`);
@@ -455,9 +616,15 @@ function handleIrcMessage(line) {
 				ircSend(`JOIN ${inviteChannel}`);
 			}
 			break;
+		}
 
 		case 'ERROR':
 			addIrcMessage('error', params[0] || 'Connection error');
+			break;
+
+		case 'FAIL':
+			// IRCv3 standard replies: FAIL <command> <code> [context] :description
+			console.warn('[IRC] FAIL:', params.join(' '));
 			break;
 
 		// Ignore PART, QUIT, MODE, etc.
@@ -472,12 +639,27 @@ function linkifyText(text) {
 	return escaped.replace(urlRegex, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
 }
 
-function addIrcMessage(type, text, nick = null, isSelf = false) {
+function addIrcMessage(type, text, nick = null, isSelf = false, timestamp = null) {
 	const container = $('irc-messages');
 	const msg = document.createElement('div');
 	msg.className = `irc-msg ${type}`;
 
-	const time = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+	// Use provided timestamp (from server-time tag in history) or current time
+	let time;
+	if (timestamp) {
+		const date = new Date(timestamp);
+		const now = new Date();
+		const isToday = date.toDateString() === now.toDateString();
+		if (isToday) {
+			time = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+		} else {
+			time = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' +
+				date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+		}
+		msg.classList.add('history');
+	} else {
+		time = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+	}
 
 	if (type === 'chat' && nick) {
 		const nickColor = isSelf ? 'var(--acid)' : getNickColor(nick);
@@ -551,6 +733,12 @@ function disconnectIrc() {
 		state.irc.ws = null;
 		state.irc.connected = false;
 	}
+	// Clean up IRCv3 state
+	if (ircv3.capTimeout) { clearTimeout(ircv3.capTimeout); ircv3.capTimeout = null; }
+	ircv3.capNegotiating = false;
+	ircv3.enabledCaps = [];
+	ircv3.availableCaps = [];
+	ircv3.batches = {};
 	updateIrcStatus('disconnected');
 	updateIrcButtons();
 	$('irc-input').disabled = true;
