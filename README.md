@@ -88,6 +88,11 @@ loadmodule "websocket_common";
 - [ ] End-to-end encryption
 - [ ] Low bandwidth mode
 
+###### TURN Improvements
+- [ ] Utilize `--use-auth-secret` and `--static-auth-secret=${TURN_STATIC_AUTH_SECRET}`
+- [ ] Add TLS support for TURN
+- [ ] Add `--no-loopback-peers` & `--no-multicast-peers`
+
 ###### Mobile Issues
 - [ ] Dont start with user list open by default on mobile
 - [ ] User list & chatbox should be full sized when toggled on or off.
