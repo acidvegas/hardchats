@@ -65,7 +65,7 @@ function showNotification(title, body, tag = null) {
 	}
 }
 
-// Sound context for generating sounds
+// Sound context for generating synthesized sounds (message beep)
 let soundContext = null;
 
 function getSoundContext() {
@@ -78,11 +78,38 @@ function getSoundContext() {
 	return soundContext;
 }
 
-// Play sound effect using Web Audio API
+// Preloaded audio elements for join/leave wav files. Reusing one element per
+// sound keeps decode/load off the hot path.
+const SOUND_FILES = {
+	join: '/static/sounds/gta.wav',
+	leave: '/static/sounds/htp.wav'
+};
+const soundElements = {};
+
+function getSoundElement(type) {
+	if (!soundElements[type]) {
+		const a = new Audio(SOUND_FILES[type]);
+		a.preload = 'auto';
+		soundElements[type] = a;
+	}
+	return soundElements[type];
+}
+
 function playSound(type) {
 	if (!state.settings.sounds) return;
 
 	console.log('[Sound] Playing:', type);
+
+	if (type === 'join' || type === 'leave') {
+		try {
+			const a = getSoundElement(type);
+			a.currentTime = 0;
+			a.play().catch(e => console.error('[Sound] Play failed:', e));
+		} catch (e) {
+			console.error('[Sound] Failed:', e);
+		}
+		return;
+	}
 
 	try {
 		const ctx = getSoundContext();
@@ -92,29 +119,9 @@ function playSound(type) {
 		oscillator.connect(gainNode);
 		gainNode.connect(ctx.destination);
 
-		// Different sounds for different events
 		const now = ctx.currentTime;
 
-		if (type === 'join') {
-			// Rising tone
-			oscillator.frequency.setValueAtTime(400, now);
-			oscillator.frequency.linearRampToValueAtTime(600, now + 0.1);
-			oscillator.type = 'sine';
-			gainNode.gain.setValueAtTime(0.3, now);
-			gainNode.gain.linearRampToValueAtTime(0, now + 0.15);
-			oscillator.start(now);
-			oscillator.stop(now + 0.15);
-		} else if (type === 'leave') {
-			// Falling tone
-			oscillator.frequency.setValueAtTime(500, now);
-			oscillator.frequency.linearRampToValueAtTime(300, now + 0.15);
-			oscillator.type = 'sine';
-			gainNode.gain.setValueAtTime(0.3, now);
-			gainNode.gain.linearRampToValueAtTime(0, now + 0.2);
-			oscillator.start(now);
-			oscillator.stop(now + 0.2);
-		} else if (type === 'message') {
-			// Short double beep
+		if (type === 'message') {
 			oscillator.frequency.setValueAtTime(800, now);
 			oscillator.type = 'sine';
 			gainNode.gain.setValueAtTime(0.2, now);
