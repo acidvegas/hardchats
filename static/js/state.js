@@ -12,6 +12,12 @@ const state = {
 	// NOT used for output - peer audio plays via per-peer hidden <audio> elements (see
 	// setupPeerAudio in webrtc.js) for reliable mobile autoplay.
 	audioCtx: null,
+	// Hidden <audio> element kept playing a silent stream for the entire session. Started
+	// synchronously during the Connect tap so the page's audio session is active when
+	// peer audio elements get created later. Without this, mobile browsers leave new
+	// audio elements silent until some other media event activates the session.
+	audioPrimer: null,
+	audioPrimerSource: null,
 	localAnalyser: null,
 	localAudioSource: null,
 	screenStream: null,

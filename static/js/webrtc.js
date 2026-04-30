@@ -21,6 +21,75 @@ function getAudioCtx() {
 	return state.audioCtx;
 }
 
+// Start a hidden <audio> element playing a silent stream from the audio context. This
+// activates the page's audio session DURING the Connect tap (transient user activation
+// is still valid synchronously), so by the time peer audio elements are created later
+// from ontrack events - well outside any user gesture - audio playback Just Works. Without
+// this primer, mobile browsers leave new audio elements silent until some other media
+// event activates the session (e.g. a remote peer's camera coming on, which creates a
+// muted <video> that activates audio playback).
+//
+// Idempotent. Must be called synchronously inside the user-gesture handler.
+function startAudioPlaybackPrimer() {
+	if (state.audioPrimer) return;
+	const ctx = getAudioCtx();
+	if (!ctx) return;
+
+	try {
+		// Silent buffer source piping into a MediaStreamDestination. We use a non-zero
+		// gain (well below audible) so browsers don't optimize the path away as silent.
+		const buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+		const source = ctx.createBufferSource();
+		source.buffer = buffer;
+		source.loop = true;
+		const gain = ctx.createGain();
+		gain.gain.value = 0.0001;
+		const dest = ctx.createMediaStreamDestination();
+		source.connect(gain);
+		gain.connect(dest);
+		source.start();
+
+		const primer = document.createElement('audio');
+		primer.autoplay = true;
+		primer.playsInline = true;
+		primer.id = 'audio-playback-primer';
+		primer.srcObject = dest.stream;
+		const container = document.getElementById('peer-audio-container') || document.body;
+		container.appendChild(primer);
+		primer.play().catch(e => console.warn('[Audio] primer play() rejected:', e?.message || e));
+
+		state.audioPrimer = primer;
+		state.audioPrimerSource = source;
+		console.log('[Audio] Playback primer started (ctx state:', ctx.state, ')');
+	} catch (e) {
+		console.warn('[Audio] startAudioPlaybackPrimer failed:', e?.message || e);
+	}
+}
+
+// Defensive recovery for the case where a peer's <audio>.play() rejected (e.g. the
+// primer didn't take, or this device's mobile browser is stricter than expected). On
+// the next user tap anywhere in the page, retry play() on every peer audio element.
+let pendingAudioPlayRetry = false;
+function schedulePeerAudioPlayRetry() {
+	if (pendingAudioPlayRetry) return;
+	pendingAudioPlayRetry = true;
+	const retry = () => {
+		pendingAudioPlayRetry = false;
+		document.removeEventListener('click', retry);
+		document.removeEventListener('touchend', retry);
+		Object.values(state.peers).forEach(peer => {
+			if (peer.audioElement && peer.audioElement.paused) {
+				peer.audioElement.play().catch(() => {});
+			}
+		});
+		if (state.audioPrimer && state.audioPrimer.paused) {
+			state.audioPrimer.play().catch(() => {});
+		}
+	};
+	document.addEventListener('click', retry, { once: true });
+	document.addEventListener('touchend', retry, { once: true });
+}
+
 function setupLocalAudioAnalyser() {
 	if (!state.localStream) return;
 	const ctx = getAudioCtx();
@@ -585,10 +654,12 @@ function setupPeerAudio(peerId, stream) {
 			const container = document.getElementById('peer-audio-container') || document.body;
 			container.appendChild(audioEl);
 			audioEl.srcObject = peer.audioDestination.stream;
-			// Some browsers need an explicit play() even with autoplay=true. Catch failure
-			// silently - if it really can't autoplay, the next user click will cover it via
-			// resumeAllAudioContexts in ui.js.
-			audioEl.play().catch(e => console.warn(`[Audio] play() rejected for ${peerId}:`, e?.message || e));
+			audioEl.play().catch(e => {
+				console.warn(`[Audio] play() rejected for ${peerId}:`, e?.message || e);
+				// Defensive: queue a retry on next user tap. Should rarely fire because
+				// startAudioPlaybackPrimer activates the audio session at Connect time.
+				schedulePeerAudioPlayRetry();
+			});
 			peer.audioElement = audioEl;
 		}
 

@@ -192,6 +192,15 @@ async function connect() {
 	state.username = username;
 	$('login-error').classList.add('hidden');
 
+	// Create the shared AudioContext and start the playback primer SYNCHRONOUSLY,
+	// before any await. Mobile browsers (Android Chrome, iOS Safari, Firefox Android)
+	// gate audio playback behind transient user activation that disappears after the
+	// first await. Doing this here means audio playback for peers works on first join
+	// without requiring some other media event (like a remote camera turning on) to
+	// later activate the page's audio session.
+	getAudioCtx();
+	startAudioPlaybackPrimer();
+
 	try {
 		// Check for saved device preferences
 		const savedDevices = loadSavedDevices();
@@ -200,12 +209,6 @@ async function connect() {
 			: true;
 
 		state.localStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints, video: false });
-
-		// Create + resume the shared AudioContext while we're still inside the Connect
-		// click's user-gesture window. Mobile browsers (especially iOS) only credit
-		// AudioContexts created during a gesture; doing this here means every later peer
-		// inherits a 'running' context and audio plays on the first try.
-		getAudioCtx();
 
 		// Setup local audio analyser for speaking detection
 		setupLocalAudioAnalyser();
@@ -633,6 +636,15 @@ function handlePageLeave() {
 		teardownPeerAudio(id);
 		try { state.peers[id].pc.close(); } catch (e) {}
 	});
+	if (state.audioPrimer) {
+		state.audioPrimer.srcObject = null;
+		state.audioPrimer.remove();
+		state.audioPrimer = null;
+	}
+	if (state.audioPrimerSource) {
+		try { state.audioPrimerSource.stop(); } catch (e) {}
+		state.audioPrimerSource = null;
+	}
 	if (state.audioCtx) {
 		try { state.audioCtx.close(); } catch (e) {}
 		state.audioCtx = null;
