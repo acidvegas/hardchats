@@ -1,6 +1,19 @@
 // HardChats - UI Rendering (Video Grid, Users List, Volume)
 // Requires: state, $, escapeHtml from state.js
 
+// One persistent <video> element per local-tile id ('local' for camera, 'local-screen'
+// for screen share). updateVideoGrid rebuilds the tile DOM via innerHTML on every UI
+// change (including hide-cam and fullscreen toggles); on mobile, repeatedly destroying
+// the <video> element bound to the camera hardware causes the local preview to freeze
+// on the last frame. Reusing one stable element per local source keeps the hardware
+// pipeline intact across re-renders.
+const persistentLocalVideos = new Map();
+
+function clearPersistentLocalVideos() {
+	persistentLocalVideos.forEach(v => { v.srcObject = null; });
+	persistentLocalVideos.clear();
+}
+
 function updateUI() {
 	updateUsersList();
 	updateVideoGrid();
@@ -146,14 +159,35 @@ function createVideoTile(user, isMaximized) {
 function attachStreamToTile(id, stream, isLocal) {
 	setTimeout(() => {
 		const tile = $(`tile-${id}`);
-		if (tile && stream) {
-			const video = tile.querySelector('video');
-			if (video) {
-				video.srcObject = stream;
-				// Always mute video element - audio is handled via Web Audio API GainNode
+		if (!tile || !stream) return;
+		const placeholder = tile.querySelector('video');
+		if (!placeholder) return;
+
+		if (isLocal) {
+			// Reuse one persistent video element per local source. The placeholder rendered
+			// by createVideoTile gets replaced with the persistent one - the persistent
+			// element's binding to the camera survives DOM moves but not destruction.
+			let video = persistentLocalVideos.get(id);
+			if (!video) {
+				video = document.createElement('video');
+				video.autoplay = true;
+				video.playsInline = true;
 				video.muted = true;
-				video.play().catch(() => { });
+				persistentLocalVideos.set(id, video);
 			}
+			placeholder.replaceWith(video);
+			if (video.srcObject !== stream) {
+				video.srcObject = stream;
+			}
+			// Always re-call play() - removal from DOM during the previous innerHTML
+			// clear can leave the element paused.
+			video.play().catch(() => {});
+		} else {
+			// Remote: stream comes off the network, no hardware tie-in, so the simple
+			// destroy/recreate path is fine.
+			placeholder.srcObject = stream;
+			placeholder.muted = true;
+			placeholder.play().catch(() => {});
 		}
 	}, 0);
 }

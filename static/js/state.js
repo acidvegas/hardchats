@@ -34,6 +34,7 @@ const state = {
 	maxCameras: 10,
 	configLoaded: false,
 	defconMode: false, // Auto-mute and hide video for new users
+	trippyMode: false, // UI hue-shift animation - toggled via server-side dial codes
 	// Reconnection state
 	reconnectToken: null,
 	wsReconnectAttempts: 0,

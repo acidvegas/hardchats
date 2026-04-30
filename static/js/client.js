@@ -34,6 +34,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 	// IRC event listeners (from irc.js)
 	initIrcListeners();
 
+	// Dial keypad listeners (from dial.js)
+	initDialListeners();
+
 	window.addEventListener('resize', () => {
 		if (!state.maximizedPeer) updateVideoGrid();
 	});
@@ -327,6 +330,9 @@ function handleSignal(data) {
 			state.maxCameras = data.max_cameras;
 			state.reconnectToken = data.reconnect_token || null;
 
+			// Adopt server's current trippy state (set by another user before we joined).
+			setTrippyMode(!!data.trippy_mode);
+
 			// Save username on successful login
 			saveUsername(state.username);
 
@@ -472,6 +478,10 @@ function handleSignal(data) {
 				console.log('[Signal] User not found for screen_status:', data.id, 'Known users:', Object.keys(state.users));
 			}
 			updateUI();
+			break;
+
+		case 'trippy_status':
+			setTrippyMode(!!data.enabled);
 			break;
 
 	}
@@ -630,6 +640,7 @@ function handlePageLeave() {
 		}
 	}
 
+	clearPersistentLocalVideos();
 	state.localStream?.getTracks().forEach(t => t.stop());
 	state.screenStream?.getTracks().forEach(t => t.stop());
 	Object.keys(state.peers).forEach(id => {
