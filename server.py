@@ -36,6 +36,7 @@ ALLOWED_CHARS  = string.ascii_letters + string.digits + '_-'
 DIAL_CODES = {
 	'*420#':  'trippy_toggle',       # toggles UI trippy mode globally for everyone
 	'*1337#': 'rainbow_nick_toggle', # toggles the dialer's own rainbow nick
+	'*101#':  'knock',               # plays a knock sound for everyone in the room
 }
 DIAL_MAX_LEN = 32
 
@@ -432,6 +433,9 @@ async def handle_message(client_id: str, data: dict):
 			trippy_mode = not trippy_mode
 			logging.info(f'[{client_id}] Trippy mode -> {trippy_mode}')
 			await broadcast_all({'type': 'trippy_status', 'enabled': trippy_mode})
+		elif action == 'knock':
+			logging.info(f'[{client_id}] Knock')
+			await broadcast_all({'type': 'play_sound', 'sound': 'knock'})
 		elif action == 'rainbow_nick_toggle':
 			# Per-user toggle: only flips the dialer's own nick. Broadcast so every
 			# other client renders the rainbow effect on this user in their list.

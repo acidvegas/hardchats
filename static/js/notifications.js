@@ -81,8 +81,9 @@ function getSoundContext() {
 // Preloaded audio elements for join/leave wav files. Reusing one element per
 // sound keeps decode/load off the hot path.
 const SOUND_FILES = {
-	join: '/static/sounds/gta.wav',
-	leave: '/static/sounds/htp.wav'
+	join:  '/static/sounds/gta.wav',
+	leave: '/static/sounds/htp.wav',
+	knock: '/static/sounds/knock.mp3'
 };
 const soundElements = {};
 
@@ -100,7 +101,7 @@ function playSound(type) {
 
 	console.log('[Sound] Playing:', type);
 
-	if (type === 'join' || type === 'leave') {
+	if (SOUND_FILES[type]) {
 		try {
 			const a = getSoundElement(type);
 			a.currentTime = 0;

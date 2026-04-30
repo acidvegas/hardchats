@@ -491,6 +491,10 @@ function handleSignal(data) {
 			setTrippyMode(!!data.enabled);
 			break;
 
+		case 'play_sound':
+			playSound(data.sound);
+			break;
+
 		case 'nick_status':
 			// Per-user rainbow nick toggle. Server tells us when ANY user (including
 			// us) flips theirs - we just mirror it into local state and re-render.
