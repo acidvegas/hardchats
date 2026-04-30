@@ -321,17 +321,11 @@ function applyPeerVolume(peerId) {
 
 	const vol = peer.volume ?? 100;
 
-	// Nudge the shared AudioContext to resume if it got suspended (page-visibility,
-	// inactivity etc.). Cheap to call repeatedly.
-	if (state.audioCtx && state.audioCtx.state === 'suspended') {
-		state.audioCtx.resume().catch(() => {});
-	}
-
-	// GainNode handles per-peer volume (0..1.5). Global mute is on the <audio>.muted
-	// property - leave the gain at the slider value either way so unmuting restores
-	// volume immediately.
-	if (peer.gainNode) {
-		peer.gainNode.gain.setValueAtTime(vol / 100, state.audioCtx?.currentTime || 0);
+	// audio.volume is 0..1. Slider goes 0..150 for legacy reasons but anything above
+	// 100% has no effect (the previous Web-Audio gain path that supported boost was
+	// removed because mobile browsers wouldn't play its synthesized output).
+	if (peer.audioElement) {
+		peer.audioElement.volume = Math.min(1.0, vol / 100);
 	}
 
 	peer.muted = vol === 0;

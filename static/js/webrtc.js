@@ -239,12 +239,12 @@ async function createPeerConnection(peerId, username, initiator) {
 		muted: applyDefcon, // Mute if DEFCON mode
 		videoOff: applyDefcon, // Hide video if DEFCON mode
 		volume: applyDefcon ? 0 : 100, // Set volume to 0 if DEFCON mode
-		// Audio graph fields - populated lazily by setupPeerAudio. Listed here for
+		// Audio path fields - populated lazily by setupPeerAudio. Listed here for
 		// shape documentation; setupPeerAudio is the only thing that creates them.
+		// Output goes through audioElement (srcObject = WebRTC stream); analyser is
+		// for speaking detection only.
 		audioSource: null,
 		analyser: null,
-		gainNode: null,
-		audioDestination: null,
 		audioElement: null,
 		speakingLoopActive: false,
 		networkQuality: 'unknown',
@@ -601,20 +601,22 @@ async function flushPendingCandidates(peerId) {
 	delete pendingCandidates[peerId];
 }
 
-// Build (or rebuild) the audio graph for a peer:
+// Build (or rebuild) the audio path for a peer:
 //
-//   stream  ->  MediaStreamSource  -+->  AnalyserNode (speaking indicator)
-//                                    \
-//                                     ->  GainNode (per-peer volume, 0..1.5)
-//                                          \
-//                                           ->  MediaStreamAudioDestinationNode
-//                                                \
-//                                                 ->  <audio autoplay playsinline>.srcObject
+//   stream  ->  <audio autoplay playsinline>.srcObject   (output: speakers)
+//   stream  ->  MediaStreamSource -> AnalyserNode        (speaking indicator only)
 //
-// AudioContext.destination is intentionally NOT used. Routing through a hidden <audio>
-// element gives us reliable autoplay (especially on iOS/Android) once the page has had a
-// user gesture. The GainNode preserves the volume slider's 0-150% range. All peers share
-// state.audioCtx; we never close it on peer teardown.
+// Audio output is the canonical WebRTC pattern: <audio>.srcObject = remoteStream
+// directly. Mobile browsers (Android Chrome, iOS Safari) treat WebRTC remote streams
+// as real network media for autoplay and audio-session purposes, so playback starts
+// reliably as long as the page has had any prior user activation (the Connect tap).
+//
+// The previous attempt routed audio through a Web Audio GainNode + MediaStreamDestination
+// to support a 0-150% volume slider. That Web-Audio-derived stream is not classified as
+// "real" media on mobile - the audio session never activated, and audio stayed silent
+// until some unrelated media event (a remote peer's camera turning on, which mounts a
+// muted <video> with the WebRTC stream) accidentally activated it. Going direct fixes
+// that. Volume slider now caps at 100% (audio.volume is 0..1) - the >100% boost is gone.
 function setupPeerAudio(peerId, stream) {
 	const peer = state.peers[peerId];
 	if (!peer) return;
@@ -624,26 +626,16 @@ function setupPeerAudio(peerId, stream) {
 	if (!ctx) return;
 
 	try {
-		// Build the persistent half of the graph once per peer.
-		if (!peer.gainNode) {
-			peer.gainNode = ctx.createGain();
-			peer.audioDestination = ctx.createMediaStreamDestination();
-			peer.gainNode.connect(peer.audioDestination);
+		// Analyser is for speaking detection only. Not connected to any output.
+		if (peer.audioSource) {
+			try { peer.audioSource.disconnect(); } catch (e) {}
 		}
 		if (!peer.analyser) {
 			peer.analyser = ctx.createAnalyser();
 			peer.analyser.fftSize = 256;
 		}
-
-		// MediaStreamSourceNode is bound to a specific stream at construction; if we get
-		// a fresh audio stream (renegotiation, mic device switch on the remote side, etc.)
-		// we have to disconnect the old source and create a new one. Analyser/gain stay.
-		if (peer.audioSource) {
-			try { peer.audioSource.disconnect(); } catch (e) {}
-		}
 		peer.audioSource = ctx.createMediaStreamSource(stream);
 		peer.audioSource.connect(peer.analyser);
-		peer.audioSource.connect(peer.gainNode);
 
 		// Per-peer hidden <audio> element. Created once, reused across renegotiations.
 		if (!peer.audioElement) {
@@ -653,18 +645,20 @@ function setupPeerAudio(peerId, stream) {
 			audioEl.id = `peer-audio-${peerId}`;
 			const container = document.getElementById('peer-audio-container') || document.body;
 			container.appendChild(audioEl);
-			audioEl.srcObject = peer.audioDestination.stream;
-			audioEl.play().catch(e => {
+			peer.audioElement = audioEl;
+		}
+		// Update srcObject if the stream identity changed (renegotiation can hand us a
+		// fresh MediaStream). Calling .play() again is harmless on the same stream.
+		if (peer.audioElement.srcObject !== stream) {
+			peer.audioElement.srcObject = stream;
+			peer.audioElement.play().catch(e => {
 				console.warn(`[Audio] play() rejected for ${peerId}:`, e?.message || e);
-				// Defensive: queue a retry on next user tap. Should rarely fire because
-				// startAudioPlaybackPrimer activates the audio session at Connect time.
 				schedulePeerAudioPlayRetry();
 			});
-			peer.audioElement = audioEl;
 		}
 
 		// Apply current volume + global mute state.
-		peer.gainNode.gain.value = (peer.volume ?? 100) / 100;
+		peer.audioElement.volume = Math.min(1.0, (peer.volume ?? 100) / 100);
 		peer.audioElement.muted = !state.volumeEnabled;
 
 		// Speaking-indicator loop. Started once, kept alive until teardownPeerAudio.
@@ -692,8 +686,8 @@ function setupPeerAudio(peerId, stream) {
 	}
 }
 
-// Tear down a peer's audio graph and remove its <audio> element. Safe to call multiple
-// times; safe to call on partially-constructed peers. Never closes the shared context.
+// Tear down a peer's audio path and remove its <audio> element. Safe to call multiple
+// times; safe to call on partially-constructed peers.
 function teardownPeerAudio(peerId) {
 	const peer = state.peers[peerId];
 	if (!peer) return;
@@ -703,14 +697,6 @@ function teardownPeerAudio(peerId) {
 	if (peer.audioSource) {
 		try { peer.audioSource.disconnect(); } catch (e) {}
 		peer.audioSource = null;
-	}
-	if (peer.gainNode) {
-		try { peer.gainNode.disconnect(); } catch (e) {}
-		peer.gainNode = null;
-	}
-	if (peer.audioDestination) {
-		try { peer.audioDestination.disconnect(); } catch (e) {}
-		peer.audioDestination = null;
 	}
 	if (peer.analyser) {
 		try { peer.analyser.disconnect(); } catch (e) {}
