@@ -302,6 +302,12 @@
 		</div>
 	</div>
 	
+	<!-- Hidden container holding one <audio> element per remote peer. Audio playback flows
+	     through these elements (not AudioContext.destination) so mobile autoplay works
+	     reliably after the user clicks Connect. Kept off-screen, not display:none, so
+	     browsers don't optimize playback away. -->
+	<div id="peer-audio-container" aria-hidden="true" style="position:absolute;left:-9999px;top:0;width:1px;height:1px;overflow:hidden;pointer-events:none;"></div>
+
 	<footer id="app-footer">
 		<span class="footer-brand">HARDCHATS</span>
 		<span class="footer-version" id="footer-version">v1.0.0</span>

@@ -37,9 +37,7 @@ async function toggleCam() {
 
 			for (const [peerId, peer] of Object.entries(state.peers)) {
 				peer.pc.addTrack(videoTrack, state.localStream);
-				const offer = await peer.pc.createOffer();
-				await peer.pc.setLocalDescription(offer);
-				send({ type: 'offer', target: peerId, sdp: offer.sdp });
+				await sendOffer(peerId);
 			}
 
 			state.camEnabled = true;
@@ -62,15 +60,7 @@ async function toggleCam() {
 		for (const [peerId, peer] of Object.entries(state.peers)) {
 			const videoSenders = peer.pc.getSenders().filter(s => s.track && s.track.kind === 'video');
 			videoSenders.forEach(sender => peer.pc.removeTrack(sender));
-
-			// Renegotiate to inform peer that video is gone
-			try {
-				const offer = await peer.pc.createOffer();
-				await peer.pc.setLocalDescription(offer);
-				send({ type: 'offer', target: peerId, sdp: offer.sdp });
-			} catch (e) {
-				console.error(`[WebRTC] Failed to renegotiate with ${peerId}:`, e);
-			}
+			await sendOffer(peerId);
 		}
 
 		state.camEnabled = false;
@@ -127,13 +117,8 @@ async function toggleScreen() {
 			for (const [peerId, peer] of Object.entries(state.peers)) {
 				if (!peer.pc || peer.pc.connectionState === 'closed') continue;
 				peer.screenSender = peer.pc.addTrack(screenTrack, state.screenStream);
-				const offer = await peer.pc.createOffer();
-				await peer.pc.setLocalDescription(offer);
-				send({ type: 'offer', target: peerId, sdp: offer.sdp });
+				await sendOffer(peerId);
 			}
-
-			// Verify audio tracks are still intact after renegotiation
-			ensureAudioTrack();
 
 			state.screenEnabled = true;
 			state.users['local'].screenOn = true;
@@ -162,23 +147,13 @@ async function toggleScreen() {
 					peer.screenSender = null;
 				}
 
-				// Renegotiate
-				try {
-					const offer = await peer.pc.createOffer();
-					await peer.pc.setLocalDescription(offer);
-					send({ type: 'offer', target: peerId, sdp: offer.sdp });
-				} catch (e) {
-					console.error(`[WebRTC] Failed to renegotiate with ${peerId}:`, e);
-				}
+				await sendOffer(peerId);
 			}
 
 			// Now stop the tracks after they've been removed from connections
 			state.screenStream.getTracks().forEach(track => track.stop());
 			state.screenStream = null;
 		}
-
-		// Verify audio tracks are still intact after renegotiation
-		ensureAudioTrack();
 
 		state.screenEnabled = false;
 		state.users['local'].screenOn = false;
@@ -189,58 +164,18 @@ async function toggleScreen() {
 	updateUI();
 }
 
-// Ensure audio track is still active and properly connected after screen share renegotiation
-function ensureAudioTrack() {
-	const audioTrack = state.localStream?.getAudioTracks()[0];
-	if (!audioTrack) return;
-
-	// Re-enable audio track if mic should be on
-	audioTrack.enabled = state.micEnabled;
-
-	// Verify each peer has the audio sender with the correct track
-	for (const [peerId, peer] of Object.entries(state.peers)) {
-		if (!peer.pc || peer.pc.connectionState === 'closed') continue;
-
-		const audioSender = peer.pc.getSenders().find(s => s.track?.kind === 'audio');
-		if (audioSender) {
-			// If the sender's track doesn't match our current audio track, replace it
-			if (audioSender.track !== audioTrack) {
-				audioSender.replaceTrack(audioTrack).catch(e => {
-					console.error(`[WebRTC] Failed to restore audio track for ${peerId}:`, e);
-				});
-			}
-		} else {
-			// No audio sender found — re-add one
-			try {
-				peer.pc.addTrack(audioTrack, state.localStream);
-				console.warn(`[WebRTC] Re-added missing audio track for ${peerId}`);
-			} catch (e) {
-				console.error(`[WebRTC] Failed to re-add audio track for ${peerId}:`, e);
-			}
-		}
-	}
-	console.log('[Screen] Audio track verified after screen share toggle');
-}
-
 function toggleVolume() {
 	state.volumeEnabled = !state.volumeEnabled;
 
-	// Use GainNode for global mute/unmute
-	Object.entries(state.peers).forEach(([peerId, peer]) => {
-		// Resume audio context if suspended
-		if (peer.audioContext && peer.audioContext.state === 'suspended') {
-			peer.audioContext.resume();
-		}
+	// Nudge the shared context (may have been backgrounded).
+	if (state.audioCtx && state.audioCtx.state === 'suspended') {
+		state.audioCtx.resume().catch(() => {});
+	}
 
-		if (peer.gainNode) {
-			if (state.volumeEnabled) {
-				// Restore to user's set volume
-				peer.gainNode.gain.value = (peer.volume ?? 100) / 100;
-			} else {
-				// Mute
-				peer.gainNode.gain.value = 0;
-			}
-		}
+	// Global mute now lives on the <audio> elements - independent of per-peer gain so
+	// unmuting restores each user's volume slider value instantly.
+	Object.values(state.peers).forEach(peer => {
+		if (peer.audioElement) peer.audioElement.muted = !state.volumeEnabled;
 	});
 
 	$('volume-btn').classList.toggle('active', state.volumeEnabled);

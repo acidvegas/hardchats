@@ -201,6 +201,12 @@ async function connect() {
 
 		state.localStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints, video: false });
 
+		// Create + resume the shared AudioContext while we're still inside the Connect
+		// click's user-gesture window. Mobile browsers (especially iOS) only credit
+		// AudioContexts created during a gesture; doing this here means every later peer
+		// inherits a 'running' context and audio plays on the first try.
+		getAudioCtx();
+
 		// Setup local audio analyser for speaking detection
 		setupLocalAudioAnalyser();
 
@@ -295,11 +301,14 @@ function handleSignal(data) {
 			// If reconnecting, clean up existing peers first
 			if (state.myId) {
 				console.log('[WS] Reconnected - cleaning up old peer connections');
-				Object.entries(state.peers).forEach(([id, peer]) => {
-					if (peer.connectionTimeout) clearTimeout(peer.connectionTimeout);
-					if (peer.audioContext) peer.audioContext.close();
-					if (peer.statsInterval) clearInterval(peer.statsInterval);
-					peer.pc.close();
+				Object.keys(state.peers).forEach((id) => {
+					teardownPeerAudio(id);
+					const peer = state.peers[id];
+					if (peer) {
+						if (peer.connectionTimeout) clearTimeout(peer.connectionTimeout);
+						if (peer.statsInterval) clearInterval(peer.statsInterval);
+						try { peer.pc.close(); } catch (e) {}
+					}
 				});
 				state.peers = {};
 				// Clear remote users but preserve local
@@ -380,10 +389,10 @@ function handleSignal(data) {
 
 			// Immediately remove the user
 			if (state.peers[data.id]) {
+				teardownPeerAudio(data.id);
 				if (state.peers[data.id].connectionTimeout) clearTimeout(state.peers[data.id].connectionTimeout);
 				if (state.peers[data.id].statsInterval) clearInterval(state.peers[data.id].statsInterval);
-				if (state.peers[data.id].audioContext) state.peers[data.id].audioContext.close();
-				state.peers[data.id].pc.close();
+				try { state.peers[data.id].pc.close(); } catch (e) {}
 				delete state.peers[data.id];
 			}
 			delete state.users[data.id];
@@ -618,16 +627,27 @@ function handlePageLeave() {
 		}
 	}
 
-	if (state.localAudioContext) state.localAudioContext.close();
 	state.localStream?.getTracks().forEach(t => t.stop());
 	state.screenStream?.getTracks().forEach(t => t.stop());
-	Object.values(state.peers).forEach(p => {
-		if (p.audioContext) p.audioContext.close();
-		p.pc.close();
+	Object.keys(state.peers).forEach(id => {
+		teardownPeerAudio(id);
+		try { state.peers[id].pc.close(); } catch (e) {}
 	});
+	if (state.audioCtx) {
+		try { state.audioCtx.close(); } catch (e) {}
+		state.audioCtx = null;
+	}
 	state.ws?.close();
 }
 
 // Use both events for better cross-browser/mobile support
 window.onbeforeunload = handlePageLeave;
 window.addEventListener('pagehide', handlePageLeave);
+
+// Mobile browsers suspend the AudioContext when the tab/app is backgrounded. Resume on
+// foreground so audio comes back without requiring the user to tap something.
+document.addEventListener('visibilitychange', () => {
+	if (document.visibilityState === 'visible' && state.audioCtx?.state === 'suspended') {
+		state.audioCtx.resume().catch(() => {});
+	}
+});

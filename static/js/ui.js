@@ -321,20 +321,19 @@ function applyPeerVolume(peerId) {
 
 	const vol = peer.volume ?? 100;
 
-	// Resume audio context if suspended
-	if (peer.audioContext && peer.audioContext.state === 'suspended') {
-		peer.audioContext.resume();
+	// Nudge the shared AudioContext to resume if it got suspended (page-visibility,
+	// inactivity etc.). Cheap to call repeatedly.
+	if (state.audioCtx && state.audioCtx.state === 'suspended') {
+		state.audioCtx.resume().catch(() => {});
 	}
 
-	// Use GainNode for volume control (supports 0-150%)
-	// Only apply if global volume is enabled
+	// GainNode handles per-peer volume (0..1.5). Global mute is on the <audio>.muted
+	// property - leave the gain at the slider value either way so unmuting restores
+	// volume immediately.
 	if (peer.gainNode) {
-		const newGain = state.volumeEnabled ? (vol / 100) : 0;
-		peer.gainNode.gain.setValueAtTime(newGain, peer.audioContext?.currentTime || 0);
-		console.log(`[Audio] Set ${peerId} volume to ${vol}%, gain: ${newGain}`);
+		peer.gainNode.gain.setValueAtTime(vol / 100, state.audioCtx?.currentTime || 0);
 	}
 
-	// Update muted state
 	peer.muted = vol === 0;
 }
 
@@ -350,15 +349,15 @@ document.addEventListener('click', (e) => {
 	resumeAllAudioContexts();
 });
 
-// Resume all suspended audio contexts
+// Resume the shared AudioContext if it's suspended. Hooked to document clicks so any
+// interaction (after the initial Connect gesture) re-greens the audio path if a mobile
+// browser dropped it during a visibility change.
 function resumeAllAudioContexts() {
-	Object.values(state.peers).forEach(peer => {
-		if (peer.audioContext && peer.audioContext.state === 'suspended') {
-			peer.audioContext.resume().then(() => {
-				console.log('[Audio] Context resumed after user interaction');
-			});
-		}
-	});
+	if (state.audioCtx && state.audioCtx.state === 'suspended') {
+		state.audioCtx.resume().then(() => {
+			console.log('[Audio] Shared context resumed after user interaction');
+		}).catch(() => {});
+	}
 }
 
 window.togglePeerVideo = function (peerId) {

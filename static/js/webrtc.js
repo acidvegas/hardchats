@@ -3,25 +3,55 @@
 // Requires: getRtcConfig from turn.js
 // Requires: updateUI, updateSpeakingIndicator, updateUsersList from ui.js
 
+// Lazily create-and-resume the single shared AudioContext. Should be called from inside
+// a user gesture (the Connect button click) on first invocation so the context starts in
+// 'running' state on mobile. Returns null if AudioContext isn't available.
+function getAudioCtx() {
+	if (!state.audioCtx) {
+		try {
+			state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+		} catch (e) {
+			console.error('[Audio] Failed to create AudioContext:', e);
+			return null;
+		}
+	}
+	if (state.audioCtx.state === 'suspended') {
+		state.audioCtx.resume().catch(e => console.warn('[Audio] resume failed:', e?.message || e));
+	}
+	return state.audioCtx;
+}
+
 function setupLocalAudioAnalyser() {
+	if (!state.localStream) return;
+	const ctx = getAudioCtx();
+	if (!ctx) return;
+
 	try {
-		const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-		const analyser = audioContext.createAnalyser();
+		// Tear down any existing local source (e.g. mic device switch).
+		if (state.localAudioSource) {
+			try { state.localAudioSource.disconnect(); } catch (e) {}
+			state.localAudioSource = null;
+		}
+		if (state.localAnalyser) {
+			try { state.localAnalyser.disconnect(); } catch (e) {}
+		}
+
+		const analyser = ctx.createAnalyser();
 		analyser.fftSize = 256;
-		const source = audioContext.createMediaStreamSource(state.localStream);
+		const source = ctx.createMediaStreamSource(state.localStream);
+		// Local analyser is for speaking detection only. NEVER connect to destination
+		// (would cause feedback - hearing yourself with delay).
 		source.connect(analyser);
 
-		state.localAudioContext = audioContext;
 		state.localAnalyser = analyser;
+		state.localAudioSource = source;
 
 		const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
 		const checkAudio = () => {
-			if (!state.localAnalyser) return;
+			if (state.localAnalyser !== analyser) return; // replaced
 			analyser.getByteFrequencyData(dataArray);
 			const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
 			const speaking = avg > 20;
-
 			if (state.users['local'] && state.users['local'].speaking !== speaking) {
 				state.users['local'].speaking = speaking;
 				updateSpeakingIndicator('local', speaking);
@@ -30,7 +60,7 @@ function setupLocalAudioAnalyser() {
 		};
 		checkAudio();
 	} catch (e) {
-		console.error('Local audio analyser error:', e);
+		console.error('[Audio] Local analyser error:', e);
 	}
 }
 
@@ -118,9 +148,10 @@ function startNetworkMonitoring(peerId) {
 
 async function createPeerConnection(peerId, username, initiator) {
 	if (state.peers[peerId]) {
+		teardownPeerAudio(peerId);
 		if (state.peers[peerId].connectionTimeout) clearTimeout(state.peers[peerId].connectionTimeout);
 		if (state.peers[peerId].statsInterval) clearInterval(state.peers[peerId].statsInterval);
-		state.peers[peerId].pc.close();
+		try { state.peers[peerId].pc.close(); } catch (e) {}
 	}
 
 	const peerStartTime = performance.now();
@@ -139,16 +170,27 @@ async function createPeerConnection(peerId, username, initiator) {
 		muted: applyDefcon, // Mute if DEFCON mode
 		videoOff: applyDefcon, // Hide video if DEFCON mode
 		volume: applyDefcon ? 0 : 100, // Set volume to 0 if DEFCON mode
-		audioContext: null,
+		// Audio graph fields - populated lazily by setupPeerAudio. Listed here for
+		// shape documentation; setupPeerAudio is the only thing that creates them.
+		audioSource: null,
 		analyser: null,
 		gainNode: null,
+		audioDestination: null,
+		audioElement: null,
+		speakingLoopActive: false,
 		networkQuality: 'unknown',
 		networkBars: 0,
 		statsInterval: null,
 		iceRestartCount: 0,
 		connectionTimeout: null,
 		screenSender: null,
-		initiator
+		initiator,
+		// Perfect negotiation state. Polite peer (deterministic by peer-id compare)
+		// rolls back its own offer when an offer collision happens; impolite peer
+		// ignores the incoming offer. This keeps both sides from wedging each other.
+		polite: state.myId > peerId,
+		makingOffer: false,
+		ignoreOffer: false
 	};
 
 	state.localStream.getTracks().forEach(track => pc.addTrack(track, state.localStream));
@@ -163,37 +205,49 @@ async function createPeerConnection(peerId, username, initiator) {
 
 	pc.ontrack = (e) => {
 		const stream = e.streams[0];
-		if (stream) {
-			const elapsed = Math.round(performance.now() - peerStartTime);
-			console.log(`[WebRTC] Got remote track from ${peerId} (${e.track.kind}) after ${elapsed}ms`);
-			state.peers[peerId].stream = stream;
-			stream.getAudioTracks().forEach(t => t.enabled = state.volumeEnabled && !state.peers[peerId].muted);
-			setupAudioAnalyser(peerId, stream);
+		if (!stream) return;
 
-			const hasVideo = stream.getVideoTracks().length > 0;
-			if (hasVideo) {
+		const elapsed = Math.round(performance.now() - peerStartTime);
+		console.log(`[WebRTC] Got remote track from ${peerId} (${e.track.kind}) after ${elapsed}ms`);
+
+		const hasAudio = stream.getAudioTracks().length > 0;
+		const hasVideo = stream.getVideoTracks().length > 0;
+
+		// Audio playback is now wholly owned by setupPeerAudio (Web Audio graph + hidden
+		// <audio>). Track-level .enabled flips are not needed - global mute and per-peer
+		// volume are handled at the audio element / GainNode.
+		if (hasAudio) {
+			setupPeerAudio(peerId, stream);
+			// Use this as the display stream only if we don't already have one - keeps
+			// a later screen-share video-only stream from displacing audio+camera here.
+			if (!state.peers[peerId].stream) {
+				state.peers[peerId].stream = stream;
+			}
+		}
+		if (hasVideo) {
+			// Latest video stream wins for the visible tile (current behavior preserved).
+			state.peers[peerId].stream = stream;
+			state.peers[peerId].camOn = true;
+			if (state.users[peerId]) state.users[peerId].camOn = true;
+		}
+
+		updateUI();
+
+		stream.onaddtrack = (ev) => {
+			if (ev.track.kind === 'video') {
 				state.peers[peerId].camOn = true;
 				if (state.users[peerId]) state.users[peerId].camOn = true;
+				updateUI();
 			}
+		};
 
-			updateUI();
-
-			stream.onaddtrack = (e) => {
-				if (e.track.kind === 'video') {
-					state.peers[peerId].camOn = true;
-					if (state.users[peerId]) state.users[peerId].camOn = true;
-					updateUI();
-				}
-			};
-
-			stream.onremovetrack = (e) => {
-				if (e.track.kind === 'video') {
-					state.peers[peerId].camOn = false;
-					if (state.users[peerId]) state.users[peerId].camOn = false;
-					updateUI();
-				}
-			};
-		}
+		stream.onremovetrack = (ev) => {
+			if (ev.track.kind === 'video') {
+				state.peers[peerId].camOn = false;
+				if (state.users[peerId]) state.users[peerId].camOn = false;
+				updateUI();
+			}
+		};
 	};
 
 	pc.onicecandidate = (e) => {
@@ -203,11 +257,13 @@ async function createPeerConnection(peerId, username, initiator) {
 	};
 
 	pc.onicegatheringstatechange = () => {
+		if (state.peers[peerId]?.pc !== pc) return; // stale listener from a replaced pc
 		const elapsed = Math.round(performance.now() - peerStartTime);
 		console.log(`[WebRTC] Peer ${peerId} ICE gathering: ${pc.iceGatheringState} (${elapsed}ms)`);
 	};
 
 	pc.oniceconnectionstatechange = () => {
+		if (state.peers[peerId]?.pc !== pc) return; // stale listener from a replaced pc
 		const elapsed = Math.round(performance.now() - peerStartTime);
 		console.log(`[WebRTC] Peer ${peerId} ICE connection: ${pc.iceConnectionState} (${elapsed}ms)`);
 
@@ -232,6 +288,7 @@ async function createPeerConnection(peerId, username, initiator) {
 	};
 
 	pc.onconnectionstatechange = async () => {
+		if (state.peers[peerId]?.pc !== pc) return; // stale listener from a replaced pc
 		const elapsed = Math.round(performance.now() - peerStartTime);
 		console.log(`[WebRTC] Peer ${peerId} connection: ${pc.connectionState} (${elapsed}ms)`);
 
@@ -277,12 +334,34 @@ async function createPeerConnection(peerId, username, initiator) {
 
 	if (initiator) {
 		pc.addTransceiver('video', { direction: 'recvonly' });
-		const offer = await pc.createOffer();
-		await pc.setLocalDescription(offer);
-		send({ type: 'offer', target: peerId, sdp: offer.sdp });
+		await sendOffer(peerId);
 	}
 
 	return pc;
+}
+
+// Centralized offer creation. Sets makingOffer so handleOffer can detect collisions
+// (a remote offer arriving while we're mid-offer = glare).
+async function sendOffer(peerId, options = {}) {
+	const peer = state.peers[peerId];
+	if (!peer || !peer.pc || peer.pc.connectionState === 'closed') return;
+	if (state.ws?.readyState !== WebSocket.OPEN) return;
+
+	try {
+		peer.makingOffer = true;
+		const offer = await peer.pc.createOffer(options);
+		// If a remote offer was applied during createOffer (rollback path), bail.
+		if (peer.pc.signalingState !== 'stable') {
+			console.log(`[WebRTC] sendOffer aborted for ${peerId} (signalingState=${peer.pc.signalingState})`);
+			return;
+		}
+		await peer.pc.setLocalDescription(offer);
+		send({ type: 'offer', target: peerId, sdp: peer.pc.localDescription.sdp });
+	} catch (e) {
+		console.error(`[WebRTC] sendOffer failed for ${peerId}:`, e?.message || e);
+	} finally {
+		if (state.peers[peerId]) state.peers[peerId].makingOffer = false;
+	}
 }
 
 async function attemptIceRestart(peerId, pc) {
@@ -291,34 +370,40 @@ async function attemptIceRestart(peerId, pc) {
 		if (state.peers[peerId]) state.peers[peerId].iceRestartCount = restartCount + 1;
 		console.log(`[WebRTC] Attempting ICE restart for ${peerId} (attempt ${restartCount + 1}/3)`);
 		try {
-			const offer = await pc.createOffer({ iceRestart: true });
-			await pc.setLocalDescription(offer);
-			send({ type: 'offer', target: peerId, sdp: offer.sdp });
+			await sendOffer(peerId, { iceRestart: true });
 			return;
 		} catch (e) {
 			console.error(`[WebRTC] ICE restart failed for ${peerId}:`, e?.message || e);
 		}
 	}
 
-	// ICE restart exhausted or failed - clean up after delay
-	console.error(`[WebRTC] Peer ${peerId} connection failed (ICE restarts exhausted)`);
-	if (state.peers[peerId]?.statsInterval) {
-		clearInterval(state.peers[peerId].statsInterval);
+	// ICE restarts exhausted. Tear down this peer connection, but keep the user in the
+	// roster - vanishing the user with no recovery path was the source of the "person
+	// disappears and never comes back" bug. After a short delay, rebuild the connection
+	// from scratch as initiator. Server-driven user_left is the only thing that should
+	// remove a user.
+	console.error(`[WebRTC] Peer ${peerId} ICE restarts exhausted - rebuilding connection`);
+
+	const username = state.peers[peerId]?.username || state.users[peerId]?.username;
+
+	if (state.peers[peerId]) {
+		teardownPeerAudio(peerId);
+		if (state.peers[peerId].connectionTimeout) clearTimeout(state.peers[peerId].connectionTimeout);
+		if (state.peers[peerId].statsInterval) clearInterval(state.peers[peerId].statsInterval);
+		try { state.peers[peerId].pc.close(); } catch (e) {}
+		delete state.peers[peerId];
 	}
+	delete pendingCandidates[peerId];
+	if (state.maximizedPeer === peerId) state.maximizedPeer = null;
+	updateUI();
+
+	// Rebuild after a brief delay. If both sides hit this simultaneously they'll both
+	// initiate; perfect-negotiation in handleOffer resolves the resulting collision.
 	setTimeout(() => {
-		if (state.peers[peerId] &&
-			(state.peers[peerId].pc.connectionState === 'failed' ||
-				state.peers[peerId].pc.connectionState === 'closed')) {
-			console.log(`[WebRTC] Cleaning up failed peer ${peerId}`);
-			if (state.peers[peerId].audioContext) state.peers[peerId].audioContext.close();
-			state.peers[peerId].pc.close();
-			delete state.peers[peerId];
-			delete state.users[peerId];
-			delete pendingCandidates[peerId];
-			if (state.maximizedPeer === peerId) {
-				state.maximizedPeer = null;
-			}
-			updateUI();
+		if (state.users[peerId] && !state.peers[peerId] &&
+			state.ws?.readyState === WebSocket.OPEN && username) {
+			console.log(`[WebRTC] Rebuilding peer connection with ${peerId}`);
+			createPeerConnection(peerId, username, true);
 		}
 	}, 3000);
 }
@@ -332,10 +417,10 @@ async function renegotiatePeer(peerId, username) {
 
 	// Clean up old peer
 	if (state.peers[peerId]) {
+		teardownPeerAudio(peerId);
 		if (state.peers[peerId].connectionTimeout) clearTimeout(state.peers[peerId].connectionTimeout);
 		if (state.peers[peerId].statsInterval) clearInterval(state.peers[peerId].statsInterval);
-		if (state.peers[peerId].audioContext) state.peers[peerId].audioContext.close();
-		state.peers[peerId].pc.close();
+		try { state.peers[peerId].pc.close(); } catch (e) {}
 		delete state.peers[peerId];
 		delete pendingCandidates[peerId];
 	}
@@ -346,47 +431,81 @@ async function renegotiatePeer(peerId, username) {
 
 async function handleOffer(peerId, username, sdp) {
 	let pc;
+	let peer = state.peers[peerId];
 
 	// Check if peer connection already exists (renegotiation)
-	if (state.peers[peerId] && state.peers[peerId].pc &&
-		state.peers[peerId].pc.connectionState !== 'closed' &&
-		state.peers[peerId].pc.connectionState !== 'failed') {
-		// Reuse existing connection for renegotiation
-		pc = state.peers[peerId].pc;
+	if (peer && peer.pc &&
+		peer.pc.connectionState !== 'closed' &&
+		peer.pc.connectionState !== 'failed') {
+		pc = peer.pc;
 		console.log(`[WebRTC] Renegotiating with ${peerId}`);
 	} else {
-		// Create new connection for new peer
 		pc = await createPeerConnection(peerId, username, false);
+		peer = state.peers[peerId];
 	}
 
-	await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp }));
+	if (!peer) return;
 
-	// Flush any ICE candidates that arrived before remote description was set
-	await flushPendingCandidates(peerId);
+	// Perfect negotiation: detect glare (remote offer arrived while we're mid-offer
+	// or have a pending local offer). Impolite peer ignores; polite peer rolls back
+	// its own offer and accepts the remote one.
+	const offerCollision = peer.makingOffer || pc.signalingState !== 'stable';
+	peer.ignoreOffer = !peer.polite && offerCollision;
 
-	const answer = await pc.createAnswer();
-	await pc.setLocalDescription(answer);
-	send({ type: 'answer', target: peerId, sdp: answer.sdp });
+	if (peer.ignoreOffer) {
+		console.log(`[WebRTC] Ignoring colliding offer from ${peerId} (impolite side)`);
+		return;
+	}
+
+	try {
+		if (offerCollision) {
+			console.log(`[WebRTC] Rolling back for offer collision with ${peerId} (polite side)`);
+			await pc.setLocalDescription({ type: 'rollback' });
+		}
+		await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp }));
+
+		// Flush any ICE candidates that arrived before remote description was set
+		await flushPendingCandidates(peerId);
+
+		const answer = await pc.createAnswer();
+		await pc.setLocalDescription(answer);
+		send({ type: 'answer', target: peerId, sdp: answer.sdp });
+	} catch (e) {
+		console.error(`[WebRTC] handleOffer failed for ${peerId}:`, e?.message || e);
+	}
 }
 
 async function handleAnswer(peerId, sdp) {
 	const peer = state.peers[peerId];
-	if (peer) {
+	if (!peer) return;
+	// Only valid in have-local-offer. After perfect-negotiation rollback, or if the answer
+	// is for a discarded offer, signalingState will be something else and setRemoteDescription
+	// would throw. Quietly drop late/orphan answers.
+	if (peer.pc.signalingState !== 'have-local-offer') {
+		console.log(`[WebRTC] Ignoring answer from ${peerId} (signalingState=${peer.pc.signalingState})`);
+		return;
+	}
+	try {
 		await peer.pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp }));
-
-		// Flush any ICE candidates that arrived before remote description was set
 		await flushPendingCandidates(peerId);
+	} catch (e) {
+		console.error(`[WebRTC] handleAnswer failed for ${peerId}:`, e?.message || e);
 	}
 }
 
 async function handleCandidate(peerId, candidate) {
 	const peer = state.peers[peerId];
-	if (peer && peer.pc.remoteDescription) {
+	if (!peer) return;
+
+	if (peer.pc.remoteDescription) {
 		// Peer connection ready - add candidate directly
 		try {
 			await peer.pc.addIceCandidate(new RTCIceCandidate(candidate));
 		} catch (e) {
-			console.error(`[WebRTC] Failed to add ICE candidate for ${peerId}:`, e);
+			// Suppress errors when we deliberately ignored the offer this candidate belongs to
+			if (!peer.ignoreOffer) {
+				console.error(`[WebRTC] Failed to add ICE candidate for ${peerId}:`, e);
+			}
 		}
 	} else {
 		// Buffer candidate until peer connection and remote description are ready
@@ -413,60 +532,123 @@ async function flushPendingCandidates(peerId) {
 	delete pendingCandidates[peerId];
 }
 
-function setupAudioAnalyser(peerId, stream) {
+// Build (or rebuild) the audio graph for a peer:
+//
+//   stream  ->  MediaStreamSource  -+->  AnalyserNode (speaking indicator)
+//                                    \
+//                                     ->  GainNode (per-peer volume, 0..1.5)
+//                                          \
+//                                           ->  MediaStreamAudioDestinationNode
+//                                                \
+//                                                 ->  <audio autoplay playsinline>.srcObject
+//
+// AudioContext.destination is intentionally NOT used. Routing through a hidden <audio>
+// element gives us reliable autoplay (especially on iOS/Android) once the page has had a
+// user gesture. The GainNode preserves the volume slider's 0-150% range. All peers share
+// state.audioCtx; we never close it on peer teardown.
+function setupPeerAudio(peerId, stream) {
+	const peer = state.peers[peerId];
+	if (!peer) return;
+	if (!stream || stream.getAudioTracks().length === 0) return;
+
+	const ctx = getAudioCtx();
+	if (!ctx) return;
+
 	try {
-		// Close existing audio context if any
-		if (state.peers[peerId]?.audioContext) {
-			state.peers[peerId].audioContext.close();
+		// Build the persistent half of the graph once per peer.
+		if (!peer.gainNode) {
+			peer.gainNode = ctx.createGain();
+			peer.audioDestination = ctx.createMediaStreamDestination();
+			peer.gainNode.connect(peer.audioDestination);
+		}
+		if (!peer.analyser) {
+			peer.analyser = ctx.createAnalyser();
+			peer.analyser.fftSize = 256;
 		}
 
-		const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+		// MediaStreamSourceNode is bound to a specific stream at construction; if we get
+		// a fresh audio stream (renegotiation, mic device switch on the remote side, etc.)
+		// we have to disconnect the old source and create a new one. Analyser/gain stay.
+		if (peer.audioSource) {
+			try { peer.audioSource.disconnect(); } catch (e) {}
+		}
+		peer.audioSource = ctx.createMediaStreamSource(stream);
+		peer.audioSource.connect(peer.analyser);
+		peer.audioSource.connect(peer.gainNode);
 
-		// Resume audio context if suspended (browser autoplay policy)
-		if (audioContext.state === 'suspended') {
-			audioContext.resume();
+		// Per-peer hidden <audio> element. Created once, reused across renegotiations.
+		if (!peer.audioElement) {
+			const audioEl = document.createElement('audio');
+			audioEl.autoplay = true;
+			audioEl.playsInline = true;
+			audioEl.id = `peer-audio-${peerId}`;
+			const container = document.getElementById('peer-audio-container') || document.body;
+			container.appendChild(audioEl);
+			audioEl.srcObject = peer.audioDestination.stream;
+			// Some browsers need an explicit play() even with autoplay=true. Catch failure
+			// silently - if it really can't autoplay, the next user click will cover it via
+			// resumeAllAudioContexts in ui.js.
+			audioEl.play().catch(e => console.warn(`[Audio] play() rejected for ${peerId}:`, e?.message || e));
+			peer.audioElement = audioEl;
 		}
 
-		const analyser = audioContext.createAnalyser();
-		analyser.fftSize = 256;
-		const source = audioContext.createMediaStreamSource(stream);
+		// Apply current volume + global mute state.
+		peer.gainNode.gain.value = (peer.volume ?? 100) / 100;
+		peer.audioElement.muted = !state.volumeEnabled;
 
-		// Create gain node for volume control
-		const gainNode = audioContext.createGain();
-		// Respect both global mute (volumeEnabled) and individual volume setting
-		const peerVolume = (state.peers[peerId]?.volume ?? 100) / 100;
-		gainNode.gain.value = state.volumeEnabled ? peerVolume : 0;
+		// Speaking-indicator loop. Started once, kept alive until teardownPeerAudio.
+		if (!peer.speakingLoopActive) {
+			peer.speakingLoopActive = true;
+			const dataArray = new Uint8Array(peer.analyser.frequencyBinCount);
+			const tick = () => {
+				const p = state.peers[peerId];
+				if (!p || !p.speakingLoopActive || !p.analyser) return;
+				p.analyser.getByteFrequencyData(dataArray);
+				const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+				const speaking = avg > 20;
+				if (state.users[peerId] && state.users[peerId].speaking !== speaking) {
+					state.users[peerId].speaking = speaking;
+					updateSpeakingIndicator(peerId, speaking);
+				}
+				requestAnimationFrame(tick);
+			};
+			tick();
+		}
 
-		// Connect: source -> analyser (for speaking detection)
-		// Also: source -> gain -> destination (for playback with volume control)
-		source.connect(analyser);
-		source.connect(gainNode);
-		gainNode.connect(audioContext.destination);
-
-		state.peers[peerId].audioContext = audioContext;
-		state.peers[peerId].analyser = analyser;
-		state.peers[peerId].gainNode = gainNode;
-		state.peers[peerId].audioSource = source;
-
-		const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-		const checkAudio = () => {
-			if (!state.peers[peerId]) return;
-			analyser.getByteFrequencyData(dataArray);
-			const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
-			const speaking = avg > 20;
-
-			if (state.users[peerId] && state.users[peerId].speaking !== speaking) {
-				state.users[peerId].speaking = speaking;
-				updateSpeakingIndicator(peerId, speaking);
-			}
-			requestAnimationFrame(checkAudio);
-		};
-		checkAudio();
-
-		console.log(`[Audio] Setup analyser for ${peerId}, context state: ${audioContext.state}`);
+		console.log(`[Audio] setup for ${peerId}, ctx state: ${ctx.state}`);
 	} catch (e) {
-		console.error('Audio analyser error:', e);
+		console.error(`[Audio] setupPeerAudio failed for ${peerId}:`, e);
+	}
+}
+
+// Tear down a peer's audio graph and remove its <audio> element. Safe to call multiple
+// times; safe to call on partially-constructed peers. Never closes the shared context.
+function teardownPeerAudio(peerId) {
+	const peer = state.peers[peerId];
+	if (!peer) return;
+
+	peer.speakingLoopActive = false;
+
+	if (peer.audioSource) {
+		try { peer.audioSource.disconnect(); } catch (e) {}
+		peer.audioSource = null;
+	}
+	if (peer.gainNode) {
+		try { peer.gainNode.disconnect(); } catch (e) {}
+		peer.gainNode = null;
+	}
+	if (peer.audioDestination) {
+		try { peer.audioDestination.disconnect(); } catch (e) {}
+		peer.audioDestination = null;
+	}
+	if (peer.analyser) {
+		try { peer.analyser.disconnect(); } catch (e) {}
+		peer.analyser = null;
+	}
+	if (peer.audioElement) {
+		peer.audioElement.srcObject = null;
+		peer.audioElement.remove();
+		peer.audioElement = null;
 	}
 }
 

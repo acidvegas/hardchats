@@ -42,7 +42,7 @@ IRC_USER            = 'yapper'
 IRC_REALNAME        = 'https://hardchats.com/'
 IRC_MAX_NICK_LENGTH = 20
 IRC_RECONNECT_DELAY = 15000 # milliseconds
-IRC_JOIN_DELAY      = 3000  # milliseconds (delay before joining channel)
+IRC_JOIN_DELAY      = 6000  # milliseconds (delay before joining channel)
 IRC_MAX_BACKLOG     = 5000  # max messages to keep in chat history
 
 

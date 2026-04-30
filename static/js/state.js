@@ -6,8 +6,14 @@ const state = {
 	myId: null,
 	username: null,
 	localStream: null,
-	localAudioContext: null,
+	// Shared AudioContext for the whole page. Created during the Connect button click
+	// (a guaranteed user gesture) so it stays in 'running' state on mobile. Used for the
+	// local mic analyser AND every peer's analyser+gain graph. AudioContext.destination is
+	// NOT used for output - peer audio plays via per-peer hidden <audio> elements (see
+	// setupPeerAudio in webrtc.js) for reliable mobile autoplay.
+	audioCtx: null,
 	localAnalyser: null,
+	localAudioSource: null,
 	screenStream: null,
 	peers: {},
 	users: {},

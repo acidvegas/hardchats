@@ -324,10 +324,9 @@ async function applySettings() {
 				}
 			}
 
-			// Recreate local audio analyser
-			if (state.localAudioContext) {
-				state.localAudioContext.close();
-			}
+			// Rebuild the local analyser onto the new mic track. setupLocalAudioAnalyser
+			// disconnects the old source itself; we never close the shared AudioContext
+			// (it's reused across peers and across mic switches).
 			setupLocalAudioAnalyser();
 
 			console.log('[Settings] Microphone switched');
