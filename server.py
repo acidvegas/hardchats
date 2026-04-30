@@ -238,7 +238,7 @@ async def handle_message(client_id: str, data: dict):
 	:param data: The data from the client
 	'''
 
-	global session_start
+	global session_start, trippy_mode
 	msg_type = data.get('type')
 
 	if msg_type == 'join':
@@ -424,7 +424,6 @@ async def handle_message(client_id: str, data: dict):
 		# In-app dialpad. Sequences are matched against DIAL_CODES server-side so the
 		# valid codes are never visible to clients. Unknown sequences are silently
 		# ignored - we deliberately don't tell the user whether anything happened.
-		global trippy_mode
 		sequence = (data.get('sequence') or '').strip()
 		if len(sequence) > DIAL_MAX_LEN:
 			return
