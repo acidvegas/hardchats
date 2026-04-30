@@ -344,11 +344,18 @@ function handleSignal(data) {
 
 			// Preserve local state on reconnect, or initialize
 			if (!state.users['local']) {
-				state.users['local'] = { username: state.username, camOn: state.camEnabled, micOn: state.micEnabled, screenOn: state.screenEnabled, speaking: false };
+				state.users['local'] = { username: state.username, camOn: state.camEnabled, micOn: state.micEnabled, screenOn: state.screenEnabled, rainbowNick: false, speaking: false };
 			}
 
 			data.users.forEach(user => {
-				state.users[user.id] = { username: user.username, camOn: user.cam_on, micOn: user.mic_on !== false, screenOn: user.screen_on || false, speaking: false };
+				state.users[user.id] = {
+					username: user.username,
+					camOn: user.cam_on,
+					micOn: user.mic_on !== false,
+					screenOn: user.screen_on || false,
+					rainbowNick: !!user.rainbow_nick,
+					speaking: false
+				};
 				createPeerConnection(user.id, user.username, true);
 			});
 
@@ -482,6 +489,17 @@ function handleSignal(data) {
 
 		case 'trippy_status':
 			setTrippyMode(!!data.enabled);
+			break;
+
+		case 'nick_status':
+			// Per-user rainbow nick toggle. Server tells us when ANY user (including
+			// us) flips theirs - we just mirror it into local state and re-render.
+			if (data.id === state.myId) {
+				if (state.users['local']) state.users['local'].rainbowNick = !!data.rainbow;
+			} else if (state.users[data.id]) {
+				state.users[data.id].rainbowNick = !!data.rainbow;
+			}
+			updateUsersList();
 			break;
 
 	}

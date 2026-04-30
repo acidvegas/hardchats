@@ -34,8 +34,8 @@ ALLOWED_CHARS  = string.ascii_letters + string.digits + '_-'
 # Hidden dial codes - kept server-side so the client JS bundle never reveals them.
 # Sequence the user types on the in-app dialpad maps to a server action.
 DIAL_CODES = {
-	'*4201#': 'trippy_on',
-	'*4202#': 'trippy_off',
+	'*420#':  'trippy_toggle',       # toggles UI trippy mode globally for everyone
+	'*1337#': 'rainbow_nick_toggle', # toggles the dialer's own rainbow nick
 }
 DIAL_MAX_LEN = 32
 
@@ -211,7 +211,7 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
 	await ws.prepare(request)
 
 	client_id = str(uuid.uuid4())[:8]
-	clients[client_id] = {'ws': ws, 'username': None, 'cam_on': False, 'mic_on': True, 'screen_on': False}
+	clients[client_id] = {'ws': ws, 'username': None, 'cam_on': False, 'mic_on': True, 'screen_on': False, 'rainbow_nick': False}
 
 	logging.info(f'[{client_id}] Connected')
 
@@ -274,7 +274,7 @@ async def handle_message(client_id: str, data: dict):
 		reconnect_tokens[reconnect_token] = {'username': username, 'expires': time.time() + 3600}
 
 		users = [
-			{'id': cid, 'username': c['username'], 'cam_on': c.get('cam_on', False), 'mic_on': c.get('mic_on', True), 'screen_on': c.get('screen_on', False)}
+			{'id': cid, 'username': c['username'], 'cam_on': c.get('cam_on', False), 'mic_on': c.get('mic_on', True), 'screen_on': c.get('screen_on', False), 'rainbow_nick': c.get('rainbow_nick', False)}
 			for cid, c in clients.items()
 			if c['username'] and cid != client_id
 		]
@@ -338,7 +338,7 @@ async def handle_message(client_id: str, data: dict):
 		reconnect_tokens[new_token] = {'username': username, 'expires': time.time() + 3600}
 
 		users = [
-			{'id': cid, 'username': c['username'], 'cam_on': c.get('cam_on', False), 'mic_on': c.get('mic_on', True), 'screen_on': c.get('screen_on', False)}
+			{'id': cid, 'username': c['username'], 'cam_on': c.get('cam_on', False), 'mic_on': c.get('mic_on', True), 'screen_on': c.get('screen_on', False), 'rainbow_nick': c.get('rainbow_nick', False)}
 			for cid, c in clients.items()
 			if c['username'] and cid != client_id
 		]
@@ -428,14 +428,21 @@ async def handle_message(client_id: str, data: dict):
 		if len(sequence) > DIAL_MAX_LEN:
 			return
 		action = DIAL_CODES.get(sequence)
-		if action == 'trippy_on' and not trippy_mode:
-			trippy_mode = True
-			logging.info(f'[{client_id}] Trippy mode ENABLED')
-			await broadcast_all({'type': 'trippy_status', 'enabled': True})
-		elif action == 'trippy_off' and trippy_mode:
-			trippy_mode = False
-			logging.info(f'[{client_id}] Trippy mode DISABLED')
-			await broadcast_all({'type': 'trippy_status', 'enabled': False})
+		if action == 'trippy_toggle':
+			trippy_mode = not trippy_mode
+			logging.info(f'[{client_id}] Trippy mode -> {trippy_mode}')
+			await broadcast_all({'type': 'trippy_status', 'enabled': trippy_mode})
+		elif action == 'rainbow_nick_toggle':
+			# Per-user toggle: only flips the dialer's own nick. Broadcast so every
+			# other client renders the rainbow effect on this user in their list.
+			current = clients[client_id].get('rainbow_nick', False)
+			clients[client_id]['rainbow_nick'] = not current
+			logging.info(f'[{client_id}] Rainbow nick -> {not current}')
+			await broadcast_all({
+				'type'    : 'nick_status',
+				'id'      : client_id,
+				'rainbow' : not current
+			})
 
 
 async def broadcast(sender_id: str, message: dict):

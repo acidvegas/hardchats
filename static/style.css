@@ -1968,3 +1968,34 @@ body.trippy-mode .video-tile {
 body.trippy-mode .video-tile video {
 	animation: trippy-hue-counter 12s linear infinite;
 }
+
+/* ========== RAINBOW NICK ==========
+ * Per-user toggle (server-side, broadcast to everyone). Renders the username text
+ * as a flowing rainbow gradient. Works underneath trippy-mode too - the trippy
+ * filter just hue-shifts the rainbow, which still looks rainbow. */
+.rainbow-nick {
+	background: linear-gradient(
+		90deg,
+		hsl(0,   90%, 60%),
+		hsl(45,  95%, 60%),
+		hsl(90,  85%, 55%),
+		hsl(135, 80%, 55%),
+		hsl(180, 85%, 55%),
+		hsl(225, 90%, 65%),
+		hsl(270, 85%, 65%),
+		hsl(315, 90%, 60%),
+		hsl(360, 90%, 60%)
+	);
+	background-size: 200% 100%;
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
+	-webkit-text-fill-color: transparent;
+	animation: rainbow-nick-shift 3s linear infinite;
+	font-weight: 600;
+}
+
+@keyframes rainbow-nick-shift {
+	0%   { background-position: 0% 50%; }
+	100% { background-position: 200% 50%; }
+}
