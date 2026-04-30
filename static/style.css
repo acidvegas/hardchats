@@ -1910,31 +1910,61 @@ button:focus-visible, input:focus-visible {
 }
 
 /* ========== TRIPPY MODE ==========
- * Slow hue/saturation cycle on the entire body. Videos counter-animate to keep
- * camera/screen content looking normal - hue-rotate is additive, saturate is
- * multiplicative, so applying the inverse on <video> cancels the body's effect
- * just for those elements. The two animations have identical duration + timing
- * so they stay phase-locked. */
+ * Two-tier filter strategy, all phase-locked at 12s:
+ *
+ * 1. UI containers (sidebars, controls, modals, footer) get `trippy-hue-tinted`
+ *    which includes a sepia tint. Sepia introduces chroma into greys/whites that
+ *    hue-rotate alone can't tint - this is what makes the WHOLE UI rainbow rather
+ *    than just the existing colored accents.
+ *
+ * 2. Video tiles get `trippy-hue` (no sepia, since sepia can't be cleanly inverted)
+ *    and the inner <video> gets `trippy-hue-counter` to cancel both transformations.
+ *    Hue-rotate is additive (90 + -90 = 0), saturate is multiplicative
+ *    (1.45 * 0.690 ≈ 1.0) - so video content stays color-correct while tile
+ *    borders, usernames, and indicators cycle.
+ *
+ * <body> itself has no filter so video tiles remain fully untouched outside their
+ * own controlled compose chain. */
+@keyframes trippy-hue-tinted {
+	0%   { filter: sepia(0.35) hue-rotate(0deg)   saturate(1.45); }
+	25%  { filter: sepia(0.35) hue-rotate(90deg)  saturate(1.55); }
+	50%  { filter: sepia(0.35) hue-rotate(180deg) saturate(1.45); }
+	75%  { filter: sepia(0.35) hue-rotate(270deg) saturate(1.55); }
+	100% { filter: sepia(0.35) hue-rotate(360deg) saturate(1.45); }
+}
+
 @keyframes trippy-hue {
-	0%   { filter: hue-rotate(0deg)   saturate(1.15); }
-	25%  { filter: hue-rotate(90deg)  saturate(1.25); }
-	50%  { filter: hue-rotate(180deg) saturate(1.15); }
-	75%  { filter: hue-rotate(270deg) saturate(1.25); }
-	100% { filter: hue-rotate(360deg) saturate(1.15); }
+	0%   { filter: hue-rotate(0deg)   saturate(1.45); }
+	25%  { filter: hue-rotate(90deg)  saturate(1.55); }
+	50%  { filter: hue-rotate(180deg) saturate(1.45); }
+	75%  { filter: hue-rotate(270deg) saturate(1.55); }
+	100% { filter: hue-rotate(360deg) saturate(1.45); }
 }
 
 @keyframes trippy-hue-counter {
-	0%   { filter: hue-rotate(0deg)    saturate(0.870); }
-	25%  { filter: hue-rotate(-90deg)  saturate(0.800); }
-	50%  { filter: hue-rotate(-180deg) saturate(0.870); }
-	75%  { filter: hue-rotate(-270deg) saturate(0.800); }
-	100% { filter: hue-rotate(-360deg) saturate(0.870); }
+	0%   { filter: hue-rotate(0deg)    saturate(0.690); }
+	25%  { filter: hue-rotate(-90deg)  saturate(0.645); }
+	50%  { filter: hue-rotate(-180deg) saturate(0.690); }
+	75%  { filter: hue-rotate(-270deg) saturate(0.645); }
+	100% { filter: hue-rotate(-360deg) saturate(0.690); }
 }
 
-body.trippy-mode {
-	animation: trippy-hue 30s linear infinite;
+body.trippy-mode #login-screen,
+body.trippy-mode #irc-sidebar,
+body.trippy-mode #sidebar,
+body.trippy-mode #controls,
+body.trippy-mode #app-footer,
+body.trippy-mode #dial-modal .modal-content,
+body.trippy-mode #settings-modal .modal-content,
+body.trippy-mode #debug-modal .modal-content,
+body.trippy-mode #volume-popup {
+	animation: trippy-hue-tinted 12s linear infinite;
 }
 
-body.trippy-mode video {
-	animation: trippy-hue-counter 30s linear infinite;
+body.trippy-mode .video-tile {
+	animation: trippy-hue 12s linear infinite;
+}
+
+body.trippy-mode .video-tile video {
+	animation: trippy-hue-counter 12s linear infinite;
 }
