@@ -88,26 +88,9 @@ const IRC_MAX_MESSAGE_LENGTH = 300;
 function initIrcListeners() {
 	$('irc-toggle').addEventListener('click', toggleIrcSidebar);
 	$('irc-input').addEventListener('keypress', (e) => e.key === 'Enter' && sendIrcMessage());
-	$('irc-input').addEventListener('input', updateCharCount);
-	$('irc-send').addEventListener('click', sendIrcMessage);
 	$('irc-connect').addEventListener('click', handleIrcConnect);
 	$('irc-disconnect').addEventListener('click', handleIrcDisconnect);
 	$('irc-close').addEventListener('click', toggleIrcSidebar);
-}
-
-function updateCharCount() {
-	const input = $('irc-input');
-	const counter = $('irc-char-count');
-	const len = input.value.length;
-
-	counter.textContent = `${len}/${IRC_MAX_MESSAGE_LENGTH}`;
-	counter.classList.remove('warning', 'danger');
-
-	if (len >= IRC_MAX_MESSAGE_LENGTH) {
-		counter.classList.add('danger');
-	} else if (len >= IRC_MAX_MESSAGE_LENGTH * 0.8) {
-		counter.classList.add('warning');
-	}
 }
 
 function toggleIrcSidebar() {
@@ -171,9 +154,7 @@ function handleIrcDisconnect() {
 	state.irc.unreadCount = 0;
 	updateIrcBadge();
 
-	// Reset char counter
 	$('irc-input').value = '';
-	updateCharCount();
 
 	// Update button visibility
 	updateIrcButtons();
@@ -290,7 +271,6 @@ function connectIrc() {
 			updateIrcStatus('disconnected');
 			updateIrcButtons();
 			$('irc-input').disabled = true;
-			$('irc-send').disabled = true;
 
 			// Don't show messages or reconnect if intentional disconnect
 			if (state.irc.intentionalDisconnect) {
@@ -533,7 +513,6 @@ function handleIrcMessage(line) {
 				if (joinedChannel.toLowerCase() === IRC_CONFIG.channel.toLowerCase()) {
 					addIrcMessage('system', `Joined ${IRC_CONFIG.channel}`);
 					$('irc-input').disabled = false;
-					$('irc-send').disabled = false;
 
 					// Request channel history if chathistory cap is enabled
 					const hasChathistory = ircv3.enabledCaps.includes('chathistory') || ircv3.enabledCaps.includes('draft/chathistory');
@@ -593,7 +572,6 @@ function handleIrcMessage(line) {
 				const kickReason = params[2] || 'No reason';
 				addIrcMessage('system', `Kicked from ${kickChannel}: ${kickReason}`);
 				$('irc-input').disabled = true;
-				$('irc-send').disabled = true;
 
 				// Auto-rejoin after 3 seconds
 				if (kickChannel.toLowerCase() === IRC_CONFIG.channel.toLowerCase()) {
@@ -742,5 +720,4 @@ function disconnectIrc() {
 	updateIrcStatus('disconnected');
 	updateIrcButtons();
 	$('irc-input').disabled = true;
-	$('irc-send').disabled = true;
 }

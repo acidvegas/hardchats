@@ -770,51 +770,6 @@ body {
 	cursor: not-allowed;
 }
 
-.irc-input-area button {
-	width: 36px;
-	height: 36px;
-	border-radius: 8px;
-	border: none;
-	background: var(--acid);
-	color: var(--bg-primary);
-	cursor: pointer;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	transition: all 0.2s ease;
-}
-
-.irc-input-area button svg {
-	width: 18px;
-	height: 18px;
-}
-
-.irc-input-area button:hover:not(:disabled) {
-	background: var(--acid-dim);
-	transform: scale(1.05);
-}
-
-.irc-input-area button:disabled {
-	opacity: 0.5;
-	cursor: not-allowed;
-}
-
-.char-count {
-	font-family: 'JetBrains Mono', monospace;
-	font-size: 0.7rem;
-	color: var(--text-muted);
-	padding: 0 0.5rem;
-	white-space: nowrap;
-}
-
-.char-count.warning {
-	color: var(--warning);
-}
-
-.char-count.danger {
-	color: var(--danger);
-}
-
 /* ========== USER SIDEBAR (RIGHT) ========== */
 #sidebar {
 	width: var(--sidebar-width);
