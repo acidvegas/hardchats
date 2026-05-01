@@ -617,6 +617,120 @@ function linkifyText(text) {
 	return escaped.replace(urlRegex, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
 }
 
+// mIRC color palette (indexes 0-15 standard, 16-98 extended, 99 = default)
+const MIRC_PALETTE = [
+	'#ffffff','#000000','#00007f','#009300','#ff0000','#7f0000','#9c009c','#fc7f00',
+	'#ffff00','#00fc00','#009393','#00ffff','#0000fc','#ff00ff','#7f7f7f','#d2d2d2',
+	'#470000','#472100','#474700','#324700','#004700','#00472c','#004747','#002747',
+	'#000047','#2e0047','#470047','#47002a','#740000','#743a00','#747400','#517400',
+	'#007400','#007449','#007474','#004074','#000074','#4b0074','#740074','#740045',
+	'#b50000','#b56300','#b5b500','#7db500','#00b500','#00b571','#00b5b5','#0063b5',
+	'#0000b5','#7500b5','#b500b5','#b5006b','#ff0000','#ff8c00','#ffff00','#b2ff00',
+	'#00ff00','#00ffa0','#00ffff','#008cff','#0000ff','#a500ff','#ff00ff','#ff0098',
+	'#ff5959','#ffb459','#ffff71','#cfff60','#6fff6f','#65ffc9','#6dffff','#59b4ff',
+	'#5959ff','#c459ff','#ff66ff','#ff59bc','#ff9c9c','#ffd39c','#ffff9c','#e2ff9c',
+	'#9cff9c','#9cffdb','#9cffff','#9cd3ff','#9c9cff','#dc9cff','#ff9cff','#ff94d3',
+	'#000000','#131313','#282828','#363636','#4d4d4d','#656565','#818181','#9f9f9f',
+	'#bcbcbc','#e2e2e2','#ffffff'
+];
+
+function paletteColor(idx) {
+	if (idx == null || idx === 99) return null;
+	return MIRC_PALETTE[idx] || null;
+}
+
+// Parse IRC control codes into styled runs. Recognized:
+//   \x02 bold, \x1D italic, \x1F underline, \x1E strikethrough, \x11 monospace,
+//   \x16 reverse, \x0F reset, \x03[fg[,bg]] mIRC color, \x04RRGGBB[,RRGGBB] hex color.
+function parseIrcFormatting(text) {
+	const runs = [];
+	let bold=false, italic=false, underline=false, strike=false, mono=false, reverse=false;
+	let fg=null, bg=null;
+	let buf='';
+
+	const flush = () => {
+		if (buf) {
+			runs.push({ text: buf, bold, italic, underline, strike, mono, reverse, fg, bg });
+			buf = '';
+		}
+	};
+
+	const isDigit = ch => ch >= '0' && ch <= '9';
+	const isHex   = ch => /[0-9a-fA-F]/.test(ch);
+
+	let i = 0;
+	while (i < text.length) {
+		const c = text.charCodeAt(i);
+		if (c === 0x02)      { flush(); bold      = !bold;      i++; }
+		else if (c === 0x1D) { flush(); italic    = !italic;    i++; }
+		else if (c === 0x1F) { flush(); underline = !underline; i++; }
+		else if (c === 0x1E) { flush(); strike    = !strike;    i++; }
+		else if (c === 0x11) { flush(); mono      = !mono;      i++; }
+		else if (c === 0x16) { flush(); reverse   = !reverse;   i++; }
+		else if (c === 0x0F) { flush(); bold=italic=underline=strike=mono=reverse=false; fg=null; bg=null; i++; }
+		else if (c === 0x03) {
+			flush(); i++;
+			let fgStr = '';
+			while (fgStr.length < 2 && i < text.length && isDigit(text[i])) fgStr += text[i++];
+			if (fgStr === '') { fg = null; bg = null; }
+			else {
+				fg = parseInt(fgStr, 10);
+				if (text[i] === ',' && i+1 < text.length && isDigit(text[i+1])) {
+					i++;
+					let bgStr = '';
+					while (bgStr.length < 2 && i < text.length && isDigit(text[i])) bgStr += text[i++];
+					bg = parseInt(bgStr, 10);
+				}
+			}
+		}
+		else if (c === 0x04) {
+			flush(); i++;
+			const fgHex = text.substr(i, 6);
+			if (fgHex.length === 6 && [...fgHex].every(isHex)) {
+				fg = '#' + fgHex.toLowerCase();
+				i += 6;
+				if (text[i] === ',') {
+					const bgHex = text.substr(i+1, 6);
+					if (bgHex.length === 6 && [...bgHex].every(isHex)) {
+						bg = '#' + bgHex.toLowerCase();
+						i += 7;
+					}
+				}
+			} else {
+				fg = null; bg = null;
+			}
+		}
+		else {
+			buf += text[i++];
+		}
+	}
+	flush();
+	return runs;
+}
+
+function formatIrcMessage(text) {
+	const runs = parseIrcFormatting(text);
+	return runs.map(r => {
+		let fg = typeof r.fg === 'number' ? paletteColor(r.fg) : r.fg;
+		let bg = typeof r.bg === 'number' ? paletteColor(r.bg) : r.bg;
+		if (r.reverse) { const t = fg; fg = bg || 'var(--bg-primary)'; bg = t || 'var(--text-primary)'; }
+
+		const styles = [];
+		if (fg) styles.push(`color:${fg}`);
+		if (bg) styles.push(`background-color:${bg}`);
+		if (r.bold) styles.push('font-weight:bold');
+		if (r.italic) styles.push('font-style:italic');
+		const deco = [];
+		if (r.underline) deco.push('underline');
+		if (r.strike)    deco.push('line-through');
+		if (deco.length) styles.push(`text-decoration:${deco.join(' ')}`);
+		if (r.mono) styles.push("font-family:'JetBrains Mono',monospace");
+
+		const inner = linkifyText(r.text);
+		return styles.length ? `<span style="${styles.join(';')}">${inner}</span>` : inner;
+	}).join('');
+}
+
 function addIrcMessage(type, text, nick = null, isSelf = false, timestamp = null) {
 	const container = $('irc-messages');
 	const msg = document.createElement('div');
@@ -641,9 +755,9 @@ function addIrcMessage(type, text, nick = null, isSelf = false, timestamp = null
 
 	if (type === 'chat' && nick) {
 		const nickColor = isSelf ? 'var(--acid)' : getNickColor(nick);
-		msg.innerHTML = `<span class="timestamp">${time}</span><span class="nick" style="color: ${nickColor}">&lt;${escapeHtml(nick)}&gt;</span> ${linkifyText(text)}`;
+		msg.innerHTML = `<span class="timestamp">${time}</span><span class="nick" style="color: ${nickColor}">&lt;${escapeHtml(nick)}&gt;</span> ${formatIrcMessage(text)}`;
 	} else {
-		msg.innerHTML = `<span class="timestamp">${time}</span>${linkifyText(text)}`;
+		msg.innerHTML = `<span class="timestamp">${time}</span>${formatIrcMessage(text)}`;
 	}
 
 	container.appendChild(msg);
