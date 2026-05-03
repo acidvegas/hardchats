@@ -330,8 +330,10 @@ function handleSignal(data) {
 			state.maxCameras = data.max_cameras;
 			state.reconnectToken = data.reconnect_token || null;
 
-			// Adopt server's current trippy state (set by another user before we joined).
+			// Adopt server's current dial-code modes (set by other users before we joined).
 			setTrippyMode(!!data.trippy_mode);
+			setSchizoMode(!!data.schizo_mode);
+			setPongMode(!!data.pong_mode);
 
 			// Save username on successful login
 			saveUsername(state.username);
@@ -491,8 +493,20 @@ function handleSignal(data) {
 			setTrippyMode(!!data.enabled);
 			break;
 
+		case 'schizo_status':
+			setSchizoMode(!!data.enabled);
+			break;
+
+		case 'pong_status':
+			setPongMode(!!data.enabled);
+			break;
+
 		case 'play_sound':
 			playSound(data.sound);
+			break;
+
+		case 'dial_codes_list':
+			showDialCodes(data.codes || []);
 			break;
 
 		case 'nick_status':

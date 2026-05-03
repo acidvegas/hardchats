@@ -1954,3 +1954,122 @@ body.trippy-mode .video-tile video {
 	0%   { background-position: 0% 50%; }
 	100% { background-position: 200% 50%; }
 }
+
+/* ========== SCHIZO MODE (*666#) ==========
+   Subtle, slow UI shake + wiggle + skew. Cameras drift independently. */
+
+@keyframes schizo-body {
+	0%   { transform: translate(0, 0) rotate(0deg) skew(0deg, 0deg); }
+	20%  { transform: translate(-2px, 1px) rotate(-0.15deg) skew(0.3deg, -0.2deg); }
+	40%  { transform: translate(1px, -2px) rotate(0.2deg) skew(-0.3deg, 0.2deg); }
+	60%  { transform: translate(2px, 2px) rotate(-0.1deg) skew(0.2deg, 0.3deg); }
+	80%  { transform: translate(-1px, -1px) rotate(0.15deg) skew(-0.4deg, -0.1deg); }
+	100% { transform: translate(0, 0) rotate(0deg) skew(0deg, 0deg); }
+}
+
+@keyframes schizo-tile-a {
+	0%, 100% { transform: translate(0, 0) rotate(0deg) scale(1); }
+	25%      { transform: translate(-3px, 2px) rotate(-0.4deg) scale(1.005); }
+	50%      { transform: translate(2px, -3px) rotate(0.5deg) scale(0.995); }
+	75%      { transform: translate(3px, 3px) rotate(-0.3deg) scale(1.008); }
+}
+
+@keyframes schizo-tile-b {
+	0%, 100% { transform: translate(0, 0) rotate(0deg) scale(1); }
+	20%      { transform: translate(2px, -2px) rotate(0.5deg) scale(1.006); }
+	55%      { transform: translate(-3px, 2px) rotate(-0.4deg) scale(0.994); }
+	80%      { transform: translate(-2px, -3px) rotate(0.3deg) scale(1.004); }
+}
+
+@keyframes schizo-video {
+	0%, 100% { transform: scale(1.04) translate(0, 0); filter: hue-rotate(0deg); }
+	33%      { transform: scale(1.06) translate(-4px, 3px); filter: hue-rotate(8deg); }
+	66%      { transform: scale(1.05) translate(3px, -4px); filter: hue-rotate(-6deg); }
+}
+
+body.schizo-mode #app {
+	animation: schizo-body 9s ease-in-out infinite;
+}
+
+body.schizo-mode .video-tile {
+	animation: schizo-tile-a 9s ease-in-out infinite;
+}
+
+body.schizo-mode .video-tile:nth-child(2n) {
+	animation: schizo-tile-b 8s ease-in-out infinite;
+	animation-delay: -2s;
+}
+
+body.schizo-mode .video-tile:nth-child(3n) {
+	animation: schizo-tile-a 10s ease-in-out infinite;
+	animation-delay: -4s;
+}
+
+body.schizo-mode .video-tile video {
+	animation: schizo-video 12s ease-in-out infinite;
+}
+
+body.schizo-mode .video-tile:nth-child(2n) video {
+	animation-delay: -3s;
+	animation-duration: 14s;
+}
+
+/* ========== PONG MODE (*9059#) ==========
+   Tiles get position:absolute and JS animates their transform. */
+
+body.pong-mode #video-grid {
+	display: block;
+	position: relative;
+	overflow: hidden;
+}
+
+body.pong-mode .video-tile {
+	position: absolute;
+	left: 0;
+	top: 0;
+	width: 240px;
+	height: 180px;
+	will-change: transform;
+	transition: none;
+}
+
+/* Pong + schizo together: don't fight over transform. Pong wins. */
+body.pong-mode.schizo-mode .video-tile,
+body.pong-mode.schizo-mode .video-tile video {
+	animation: none;
+}
+
+/* ========== DIAL CODES LIST (*#06#) ========== */
+
+.dial-codes-list {
+	list-style: none;
+	margin: 0;
+	padding: 0.5rem 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	max-height: 60vh;
+	overflow-y: auto;
+}
+
+.dial-codes-list li {
+	display: flex;
+	align-items: baseline;
+	gap: 0.75rem;
+	padding: 0.5rem 0.75rem;
+	background: var(--bg-primary);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+}
+
+.dial-codes-list code {
+	font-family: 'JetBrains Mono', monospace;
+	color: var(--acid);
+	min-width: 5.5rem;
+	font-weight: 600;
+}
+
+.dial-codes-list span {
+	color: var(--text-primary);
+	font-size: 0.85rem;
+}

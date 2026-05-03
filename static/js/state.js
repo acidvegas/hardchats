@@ -35,6 +35,8 @@ const state = {
 	configLoaded: false,
 	defconMode: false, // Auto-mute and hide video for new users
 	trippyMode: false, // UI hue-shift animation - toggled via server-side dial codes
+	schizoMode: false, // Subtle UI shake/wiggle - toggled via *666#
+	pongMode:   false, // Webcam tiles bounce around - toggled via *9059#
 	// Reconnection state
 	reconnectToken: null,
 	wsReconnectAttempts: 0,

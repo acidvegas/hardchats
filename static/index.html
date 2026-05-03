@@ -335,6 +335,21 @@
 		</div>
 	</div>
 
+	<!-- Dial codes list modal (shown only to the dialer who hits *#06#) -->
+	<div id="dial-codes-modal" class="modal hidden">
+		<div class="modal-content">
+			<div class="modal-header">
+				<h3>Dial Codes</h3>
+				<button id="dial-codes-close" class="modal-close-btn" title="Close">
+					<svg viewBox="0 0 24 24" fill="currentColor">
+						<path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+					</svg>
+				</button>
+			</div>
+			<ul id="dial-codes-list" class="dial-codes-list"></ul>
+		</div>
+	</div>
+
 	<!-- Hidden container holding one <audio> element per remote peer. Audio playback flows
 	     through these elements (not AudioContext.destination) so mobile autoplay works
 	     reliably after the user clicks Connect. Kept off-screen, not display:none, so

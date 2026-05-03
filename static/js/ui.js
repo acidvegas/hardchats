@@ -143,6 +143,11 @@ function updateVideoGrid() {
 			attachStreamToTile(user.id, user.stream, user.isLocal);
 		});
 	}
+
+	// Pong mode tracks tiles by id; grid was just rebuilt so re-sync.
+	if (state.pongMode && typeof pongRefreshTiles === 'function') {
+		pongRefreshTiles();
+	}
 }
 
 function createVideoTile(user, isMaximized) {

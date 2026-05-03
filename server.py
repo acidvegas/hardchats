@@ -28,6 +28,8 @@ captchas         = {} # captcha_id -> {answer, expires}
 reconnect_tokens = {} # token -> {username, expires}
 session_start    = None
 trippy_mode      = False
+schizo_mode      = False
+pong_mode        = False
 
 ALLOWED_CHARS  = string.ascii_letters + string.digits + '_-'
 
@@ -37,7 +39,20 @@ DIAL_CODES = {
 	'*420#':  'trippy_toggle',       # toggles UI trippy mode globally for everyone
 	'*1337#': 'rainbow_nick_toggle', # toggles the dialer's own rainbow nick
 	'*101#':  'knock',               # plays a knock sound for everyone in the room
+	'*666#':  'schizo_toggle',       # toggles schizo mode (subtle UI shake/wiggle/morph)
+	'*9059#': 'pong_toggle',         # toggles pong mode (webcam tiles bounce around)
+	'*#06#':  'show_codes',          # privately reveals all dial codes to the dialer
 }
+
+# Human-readable descriptions, sent privately to the dialer who hits *#06#.
+DIAL_CODE_DESCRIPTIONS = [
+	('*420#',  'Toggle trippy color mode (everyone)'),
+	('*1337#', 'Toggle rainbow nickname (just you)'),
+	('*101#',  'Play a knock sound (everyone)'),
+	('*666#',  'Toggle schizo mode (everyone)'),
+	('*9059#', 'Toggle pong mode (everyone)'),
+	('*#06#',  'Show this list (just you)'),
+]
 DIAL_MAX_LEN = 32
 
 
@@ -239,7 +254,7 @@ async def handle_message(client_id: str, data: dict):
 	:param data: The data from the client
 	'''
 
-	global session_start, trippy_mode
+	global session_start, trippy_mode, schizo_mode, pong_mode
 	msg_type = data.get('type')
 
 	if msg_type == 'join':
@@ -287,7 +302,9 @@ async def handle_message(client_id: str, data: dict):
 			'session_start'   : session_start,
 			'max_cameras'     : config.MAX_CAMERAS,
 			'reconnect_token' : reconnect_token,
-			'trippy_mode'     : trippy_mode
+			'trippy_mode'     : trippy_mode,
+			'schizo_mode'     : schizo_mode,
+			'pong_mode'       : pong_mode
 		})
 
 		await broadcast(client_id, {
@@ -351,7 +368,9 @@ async def handle_message(client_id: str, data: dict):
 			'session_start'   : session_start,
 			'max_cameras'     : config.MAX_CAMERAS,
 			'reconnect_token' : new_token,
-			'trippy_mode'     : trippy_mode
+			'trippy_mode'     : trippy_mode,
+			'schizo_mode'     : schizo_mode,
+			'pong_mode'       : pong_mode
 		})
 
 		await broadcast(client_id, {
@@ -436,6 +455,21 @@ async def handle_message(client_id: str, data: dict):
 		elif action == 'knock':
 			logging.info(f'[{client_id}] Knock')
 			await broadcast_all({'type': 'play_sound', 'sound': 'knock'})
+		elif action == 'schizo_toggle':
+			schizo_mode = not schizo_mode
+			logging.info(f'[{client_id}] Schizo mode -> {schizo_mode}')
+			await broadcast_all({'type': 'schizo_status', 'enabled': schizo_mode})
+		elif action == 'pong_toggle':
+			pong_mode = not pong_mode
+			logging.info(f'[{client_id}] Pong mode -> {pong_mode}')
+			await broadcast_all({'type': 'pong_status', 'enabled': pong_mode})
+		elif action == 'show_codes':
+			# Private reply to just the dialer - other clients never see the codes.
+			logging.info(f'[{client_id}] Dial code list requested')
+			await clients[client_id]['ws'].send_json({
+				'type'  : 'dial_codes_list',
+				'codes' : [{'code': c, 'desc': d} for (c, d) in DIAL_CODE_DESCRIPTIONS]
+			})
 		elif action == 'rainbow_nick_toggle':
 			# Per-user toggle: only flips the dialer's own nick. Broadcast so every
 			# other client renders the rainbow effect on this user in their list.
