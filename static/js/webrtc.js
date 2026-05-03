@@ -262,7 +262,13 @@ async function createPeerConnection(peerId, username, initiator) {
 		ignoreOffer: false
 	};
 
-	state.localStream.getTracks().forEach(track => pc.addTrack(track, state.localStream));
+	state.localStream.getTracks().forEach(track => {
+		const sender = pc.addTrack(track, state.localStream);
+		// Stash the audio sender so breakout gating can call replaceTrack(null) on
+		// just this peer when we shouldn't be transmitting to them. track.enabled
+		// would mute for everyone (shared track ref).
+		if (track.kind === 'audio') state.peers[peerId].audioSender = sender;
+	});
 
 	// If screen is currently being shared, add the screen track for this new peer
 	if (state.screenEnabled && state.screenStream) {
@@ -665,6 +671,12 @@ function setupPeerAudio(peerId, stream) {
 		// Apply current volume + global mute state.
 		peer.audioElement.volume = Math.min(1.0, (peer.volume ?? 100) / 100);
 		peer.audioElement.muted = !state.volumeEnabled;
+
+		// Reapply breakout-room gating - if this peer is in a different room than us,
+		// their audio element gets muted on top of the regular volume rules.
+		if (typeof applyBreakoutGatingForPeer === 'function') {
+			applyBreakoutGatingForPeer(peerId);
+		}
 
 		// Speaking-indicator loop. Started once, kept alive until teardownPeerAudio.
 		if (!peer.speakingLoopActive) {

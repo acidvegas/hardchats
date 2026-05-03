@@ -17,6 +17,12 @@ function toggleMic() {
 	state.users['local'].micOn = state.micEnabled;
 	console.log('[Mic] Sending mic_status:', state.micEnabled, 'WebSocket state:', state.ws?.readyState);
 	send({ type: 'mic_status', enabled: state.micEnabled });
+
+	// Re-apply breakout gating - the per-sender track flips above might not match
+	// breakout state (we may have just enabled the local audio track for peers we
+	// shouldn't be transmitting to).
+	if (typeof applyBreakoutGatingAll === 'function') applyBreakoutGatingAll();
+
 	updateUI();
 }
 
@@ -24,6 +30,12 @@ async function toggleCam() {
 	// Check for cooldown when trying to turn ON camera
 	if (!state.camEnabled && cameraCooldown) {
 		console.log('[Camera] Cooldown active, please wait');
+		return;
+	}
+
+	// Breakout room is voice-only - block enabling cam.
+	if (!state.camEnabled && state.users['local']?.breakout) {
+		console.log('[Camera] Disabled in breakout room');
 		return;
 	}
 
@@ -93,6 +105,12 @@ async function toggleCam() {
 }
 
 async function toggleScreen() {
+	// Breakout room is voice-only - block enabling screen share.
+	if (!state.screenEnabled && state.users['local']?.breakout) {
+		console.log('[Screen] Disabled in breakout room');
+		return;
+	}
+
 	if (!state.screenEnabled) {
 		try {
 			// Request screen capture
@@ -177,6 +195,9 @@ function toggleVolume() {
 	Object.values(state.peers).forEach(peer => {
 		if (peer.audioElement) peer.audioElement.muted = !state.volumeEnabled;
 	});
+
+	// Don't undo breakout-room muting when global unmute is hit.
+	if (typeof applyBreakoutGatingAll === 'function') applyBreakoutGatingAll();
 
 	$('volume-btn').classList.toggle('active', state.volumeEnabled);
 	$('volume-btn').classList.toggle('muted', !state.volumeEnabled);

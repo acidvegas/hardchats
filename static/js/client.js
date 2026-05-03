@@ -362,7 +362,7 @@ function handleSignal(data) {
 
 			// Preserve local state on reconnect, or initialize
 			if (!state.users['local']) {
-				state.users['local'] = { username: state.username, camOn: state.camEnabled, micOn: state.micEnabled, screenOn: state.screenEnabled, rainbowNick: false, ghost: false, fed: false, speaking: false };
+				state.users['local'] = { username: state.username, camOn: state.camEnabled, micOn: state.micEnabled, screenOn: state.screenEnabled, rainbowNick: false, ghost: false, fed: false, breakout: false, speaking: false };
 			}
 
 			data.users.forEach(user => {
@@ -374,6 +374,7 @@ function handleSignal(data) {
 					rainbowNick: !!user.rainbow_nick,
 					ghost: !!user.ghost,
 					fed: !!user.fed,
+					breakout: !!user.breakout,
 					speaking: false
 				};
 				createPeerConnection(user.id, user.username, true);
@@ -410,6 +411,7 @@ function handleSignal(data) {
 				camOn: data.cam_on || false,
 				micOn: data.mic_on !== false,
 				screenOn: data.screen_on || false,
+				breakout: false,
 				speaking: false
 			};
 			console.log('[Signal] user_joined:', data.id, 'micOn:', data.mic_on, 'state:', state.users[data.id]);
@@ -531,7 +533,9 @@ function handleSignal(data) {
 				if (!u) return;
 				u.rainbowNick = false;
 				u.ghost = false;
+				u.breakout = false;
 			});
+			applyBreakoutGatingAll();
 			updateUsersList();
 			break;
 
@@ -566,6 +570,10 @@ function handleSignal(data) {
 			updateUsersList();
 			break;
 
+		case 'breakout_status':
+			handleBreakoutStatus(data.id, !!data.breakout);
+			break;
+
 		case 'nick_status':
 			// Per-user rainbow nick toggle. Server tells us when ANY user (including
 			// us) flips theirs - we just mirror it into local state and re-render.
@@ -578,6 +586,70 @@ function handleSignal(data) {
 			break;
 
 	}
+}
+
+// ========== BREAKOUT ROOM (*87#) ==========
+//
+// Per-user flag gates audio in both directions: if your breakout matches a peer's,
+// you can hear each other. If not, both sides mute the relevant sender track and
+// <audio> element. No video/screenshare while in breakout - we force-disable yours
+// when you enter. Anyone in main lobby sees breakout users as muted (their audio
+// gating already produces silence on this end). Not a security boundary - a
+// determined client could re-enable everything locally.
+function handleBreakoutStatus(userId, inBreakout) {
+	const isMe = userId === state.myId;
+
+	if (isMe) {
+		if (state.users['local']) state.users['local'].breakout = inBreakout;
+
+		// Entering breakout: kill your own video/screen feeds since breakout is
+		// voice-only. Toggling out doesn't auto-restore anything - they re-enable
+		// with the regular cam/screen buttons.
+		if (inBreakout) {
+			if (state.camEnabled && typeof toggleCam === 'function') toggleCam();
+			if (state.screenEnabled && typeof toggleScreen === 'function') toggleScreen();
+		}
+	} else if (state.users[userId]) {
+		state.users[userId].breakout = inBreakout;
+	}
+
+	applyBreakoutGatingAll();
+	updateUI();
+}
+
+// Recomputes per-peer audio gating against the local breakout flag.
+function applyBreakoutGatingAll() {
+	Object.keys(state.peers).forEach(applyBreakoutGatingForPeer);
+}
+
+function applyBreakoutGatingForPeer(peerId) {
+	const peer = state.peers[peerId];
+	if (!peer) return;
+	const myBreakout = !!state.users['local']?.breakout;
+	const theirBreakout = !!state.users[peerId]?.breakout;
+	const canHear = myBreakout === theirBreakout;
+
+	// Outgoing: when our breakout state doesn't match this peer, swap the audio
+	// sender's track for null so they receive silence. track.enabled would mute the
+	// mic for every peer because the underlying MediaStreamTrack is shared. This
+	// way the regular mic on/off (toggleMic) still works for matching peers.
+	const localAudioTrack = state.localStream?.getAudioTracks()[0] || null;
+	const targetTrack = canHear ? localAudioTrack : null;
+	if (peer.audioSender) {
+		// replaceTrack is transparent (no renegotiation needed). Avoid redundant calls.
+		if (peer.audioSender.track !== targetTrack) {
+			peer.audioSender.replaceTrack(targetTrack).catch(e => {
+				console.warn(`[Breakout] replaceTrack failed for ${peerId}:`, e?.message || e);
+			});
+		}
+	}
+
+	// Incoming: mute their <audio> element on our side.
+	if (peer.audioElement) {
+		peer.audioElement.muted = !canHear || !state.volumeEnabled;
+	}
+
+	peer.breakoutMuted = !canHear;
 }
 
 // ========== TIMER ==========

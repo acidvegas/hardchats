@@ -2352,3 +2352,28 @@ body.pong-mode.schizo-mode .video-tile video {
 	font-variant-numeric: tabular-nums;
 	color: #fff;
 }
+
+/* ========== Breakout room (*87#) ========== */
+
+/* Users you can't hear (different breakout room than you) - name + indicators dimmed. */
+.user-item.breakout-isolated .user-name,
+.user-item.breakout-isolated .user-indicators {
+	opacity: 0.45;
+	filter: grayscale(0.6);
+}
+
+/* Small "BR" pill on anyone currently in the breakout room. Visible to everyone. */
+.breakout-tag {
+	display: inline-block;
+	margin-left: 6px;
+	padding: 1px 6px;
+	background: rgba(56, 189, 248, 0.15);
+	border: 1px solid #38bdf8;
+	border-radius: 3px;
+	color: #38bdf8;
+	font-family: 'JetBrains Mono', monospace;
+	font-size: 0.65rem;
+	font-weight: 700;
+	letter-spacing: 0.1em;
+	vertical-align: middle;
+}

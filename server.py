@@ -45,6 +45,7 @@ DIAL_CODES = {
 	'*000#':  'reset_all',           # turns off every mode/effect for everyone
 	'*73#':   'record_open',         # opens the dialer's record popup (10s max)
 	'*74#':   'play_recording',      # broadcasts the dialer's last recording to everyone
+	'*87#':   'breakout_toggle',     # toggles dialer in/out of the private breakout room
 	'*#06#':  'show_codes',          # privately reveals all dial codes to the dialer
 }
 
@@ -59,6 +60,7 @@ DIAL_CODE_DESCRIPTIONS = [
 	('*000#',  'Reset everything to normal (everyone)'),
 	('*73#',   'Record up to 10s of the chat (everyone you hear)'),
 	('*74#',   'Play your recording for everyone in the chat'),
+	('*87#',   'Join/leave the breakout room (private side convo)'),
 	('*#06#',  'Show this list (just you)'),
 ]
 
@@ -237,7 +239,7 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
 	await ws.prepare(request)
 
 	client_id = str(uuid.uuid4())[:8]
-	clients[client_id] = {'ws': ws, 'username': None, 'cam_on': False, 'mic_on': True, 'screen_on': False, 'rainbow_nick': False, 'ghost': False, 'fed': False}
+	clients[client_id] = {'ws': ws, 'username': None, 'cam_on': False, 'mic_on': True, 'screen_on': False, 'rainbow_nick': False, 'ghost': False, 'fed': False, 'breakout': False}
 
 	logging.info(f'[{client_id}] Connected')
 
@@ -300,7 +302,7 @@ async def handle_message(client_id: str, data: dict):
 		reconnect_tokens[reconnect_token] = {'username': username, 'expires': time.time() + 3600}
 
 		users = [
-			{'id': cid, 'username': c['username'], 'cam_on': c.get('cam_on', False), 'mic_on': c.get('mic_on', True), 'screen_on': c.get('screen_on', False), 'rainbow_nick': c.get('rainbow_nick', False), 'ghost': c.get('ghost', False), 'fed': c.get('fed', False)}
+			{'id': cid, 'username': c['username'], 'cam_on': c.get('cam_on', False), 'mic_on': c.get('mic_on', True), 'screen_on': c.get('screen_on', False), 'rainbow_nick': c.get('rainbow_nick', False), 'ghost': c.get('ghost', False), 'fed': c.get('fed', False), 'breakout': c.get('breakout', False)}
 			for cid, c in clients.items()
 			if c['username'] and cid != client_id
 		]
@@ -366,7 +368,7 @@ async def handle_message(client_id: str, data: dict):
 		reconnect_tokens[new_token] = {'username': username, 'expires': time.time() + 3600}
 
 		users = [
-			{'id': cid, 'username': c['username'], 'cam_on': c.get('cam_on', False), 'mic_on': c.get('mic_on', True), 'screen_on': c.get('screen_on', False), 'rainbow_nick': c.get('rainbow_nick', False), 'ghost': c.get('ghost', False), 'fed': c.get('fed', False)}
+			{'id': cid, 'username': c['username'], 'cam_on': c.get('cam_on', False), 'mic_on': c.get('mic_on', True), 'screen_on': c.get('screen_on', False), 'rainbow_nick': c.get('rainbow_nick', False), 'ghost': c.get('ghost', False), 'fed': c.get('fed', False), 'breakout': c.get('breakout', False)}
 			for cid, c in clients.items()
 			if c['username'] and cid != client_id
 		]
@@ -508,8 +510,21 @@ async def handle_message(client_id: str, data: dict):
 			for c in clients.values():
 				c['rainbow_nick'] = False
 				c['ghost']        = False
+				c['breakout']     = False
 			logging.info(f'[{client_id}] Reset all modes')
 			await broadcast_all({'type': 'reset_all'})
+		elif action == 'breakout_toggle':
+			# Per-user toggle. Audio gating is handled client-side: each client mutes
+			# the sender track + receiver audio for any peer whose breakout flag
+			# doesn't match their own. Server just tracks state and fans out.
+			current = clients[client_id].get('breakout', False)
+			clients[client_id]['breakout'] = not current
+			logging.info(f'[{client_id}] Breakout -> {not current}')
+			await broadcast_all({
+				'type'     : 'breakout_status',
+				'id'       : client_id,
+				'breakout' : not current
+			})
 		elif action == 'ghost_toggle':
 			current = clients[client_id].get('ghost', False)
 			clients[client_id]['ghost'] = not current

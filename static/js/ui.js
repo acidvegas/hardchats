@@ -55,8 +55,13 @@ function updateVideoGrid() {
 		});
 	}
 
+	// Hide video tiles for users in a different breakout state - they're voice-only
+	// and isolated from us, no reason to show their cam/screen.
+	const myBreakout = !!state.users['local']?.breakout;
+
 	// Add remote users' cameras and screens
 	Object.entries(state.peers).forEach(([id, peer]) => {
+		if (!!state.users[id]?.breakout !== myBreakout) return;
 		if (state.users[id]?.camOn && peer.stream && !peer.videoOff) {
 			// Check if stream has video tracks - could be camera or screen
 			const videoTracks = peer.stream.getVideoTracks();
@@ -252,11 +257,18 @@ function updateUsersList() {
 
 	count.textContent = allUsers.length;
 
+	const myBreakout = !!state.users['local']?.breakout;
+
 	list.innerHTML = allUsers.map(user => {
 		const peer = state.peers[user.id];
 		const volume = peer?.volume ?? 100;
 		const isMuted = volume === 0;
 		const isVideoOff = peer?.videoOff;
+		// Breakout-isolated: this user is in a different room than us. They show
+		// greyed out, and their mic indicator looks muted to us regardless of their
+		// real mic state (we can't hear them anyway).
+		const breakoutIsolated = !user.isLocal && (!!user.breakout !== myBreakout);
+		const inBreakout = !!user.breakout;
 
 		// Volume icon changes based on level
 		let volumeIcon;
@@ -270,17 +282,22 @@ function updateUsersList() {
 			volumeIcon = '<path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>';
 		}
 
+		// Mic appears muted to us if either they actually muted, OR we can't hear them
+		// because they're in a different breakout room from ours.
+		const micLooksMuted = user.micOn === false || breakoutIsolated;
+
 		return `
-			<div class="user-item ${user.speaking ? 'speaking' : ''} ${user.isLocal ? 'local' : ''}" data-id="${user.id}">
+			<div class="user-item ${user.speaking && !breakoutIsolated ? 'speaking' : ''} ${user.isLocal ? 'local' : ''} ${breakoutIsolated ? 'breakout-isolated' : ''} ${inBreakout ? 'in-breakout' : ''}" data-id="${user.id}">
 				<div class="user-info">
 					${user.isLocal ? '' : getNetworkQualityHTML(user.id)}
 					<span class="user-name${user.rainbowNick ? ' rainbow-nick' : ''}">${escapeHtml(user.username)}</span>
 					${user.fed && !state.fedFakeActive ? '<span class="fed-tag" title="Recording the call">FED</span>' : ''}
+					${inBreakout ? '<span class="breakout-tag" title="In breakout room">BR</span>' : ''}
 					<div class="user-indicators">
-						${user.micOn === false ? '<svg class="indicator mic-muted" viewBox="0 0 24 24" fill="currentColor" title="Muted"><path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-1.66-1.34-3-3-3S9 3.34 9 5v.18l5.98 5.99zM4.27 3L3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z"/></svg>' : ''}
+						${micLooksMuted ? '<svg class="indicator mic-muted" viewBox="0 0 24 24" fill="currentColor" title="Muted"><path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-1.66-1.34-3-3-3S9 3.34 9 5v.18l5.98 5.99zM4.27 3L3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z"/></svg>' : ''}
 						${user.camOn ? '<svg class="indicator cam-on" viewBox="0 0 24 24" fill="currentColor" title="Camera On"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>' : ''}
 						${user.screenOn ? '<svg class="indicator screen-on" viewBox="0 0 24 24" fill="currentColor" title="Sharing Screen"><path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/></svg>' : ''}
-						${user.speaking && user.micOn !== false ? '<svg class="indicator mic-active" viewBox="0 0 24 24" fill="currentColor" title="Speaking"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>' : ''}
+						${user.speaking && user.micOn !== false && !breakoutIsolated ? '<svg class="indicator mic-active" viewBox="0 0 24 24" fill="currentColor" title="Speaking"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>' : ''}
 					</div>
 				</div>
 				${user.isLocal ? `
