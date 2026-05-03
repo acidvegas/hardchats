@@ -85,6 +85,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 			toggleDebugModal();
 		});
 	}
+
+	// Hangup button - cleanly leaves and tries to close the tab.
+	const hangupBtn = $('hangup-btn');
+	if (hangupBtn) {
+		const hangup = () => {
+			try { send({ type: 'leave' }); } catch (e) {}
+			try { state.ws?.close(); } catch (e) {}
+			window.close();
+			// window.close() is a no-op if the tab wasn't opened by script. As a
+			// fallback, navigate away so they at least leave the chat surface.
+			setTimeout(() => { try { location.href = 'about:blank'; } catch (e) {} }, 50);
+		};
+		hangupBtn.addEventListener('click', hangup);
+		hangupBtn.addEventListener('touchend', (e) => { e.preventDefault(); hangup(); });
+	}
 	
 	// Debug modal close button
 	$('debug-close')?.addEventListener('click', closeDebugModal);
