@@ -346,7 +346,7 @@ function handleSignal(data) {
 
 			// Preserve local state on reconnect, or initialize
 			if (!state.users['local']) {
-				state.users['local'] = { username: state.username, camOn: state.camEnabled, micOn: state.micEnabled, screenOn: state.screenEnabled, rainbowNick: false, speaking: false };
+				state.users['local'] = { username: state.username, camOn: state.camEnabled, micOn: state.micEnabled, screenOn: state.screenEnabled, rainbowNick: false, ghost: false, speaking: false };
 			}
 
 			data.users.forEach(user => {
@@ -356,6 +356,7 @@ function handleSignal(data) {
 					micOn: user.mic_on !== false,
 					screenOn: user.screen_on || false,
 					rainbowNick: !!user.rainbow_nick,
+					ghost: !!user.ghost,
 					speaking: false
 				};
 				createPeerConnection(user.id, user.username, true);
@@ -507,6 +508,15 @@ function handleSignal(data) {
 
 		case 'dial_codes_list':
 			showDialCodes(data.codes || []);
+			break;
+
+		case 'ghost_status':
+			if (data.id === state.myId) {
+				if (state.users['local']) state.users['local'].ghost = !!data.ghost;
+			} else if (state.users[data.id]) {
+				state.users[data.id].ghost = !!data.ghost;
+			}
+			updateUsersList();
 			break;
 
 		case 'nick_status':

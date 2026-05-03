@@ -41,6 +41,7 @@ DIAL_CODES = {
 	'*101#':  'knock',               # plays a knock sound for everyone in the room
 	'*666#':  'schizo_toggle',       # toggles schizo mode (subtle UI shake/wiggle/morph)
 	'*9059#': 'pong_toggle',         # toggles pong mode (webcam tiles bounce around)
+	'*401#':  'ghost_toggle',        # hides the dialer's nick from everyone's user list
 	'*#06#':  'show_codes',          # privately reveals all dial codes to the dialer
 }
 
@@ -51,6 +52,7 @@ DIAL_CODE_DESCRIPTIONS = [
 	('*101#',  'Play a knock sound (everyone)'),
 	('*666#',  'Toggle schizo mode (everyone)'),
 	('*9059#', 'Toggle pong mode (everyone)'),
+	('*401#',  'Toggle ghost mode (hide your nick)'),
 	('*#06#',  'Show this list (just you)'),
 ]
 DIAL_MAX_LEN = 32
@@ -227,7 +229,7 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
 	await ws.prepare(request)
 
 	client_id = str(uuid.uuid4())[:8]
-	clients[client_id] = {'ws': ws, 'username': None, 'cam_on': False, 'mic_on': True, 'screen_on': False, 'rainbow_nick': False}
+	clients[client_id] = {'ws': ws, 'username': None, 'cam_on': False, 'mic_on': True, 'screen_on': False, 'rainbow_nick': False, 'ghost': False}
 
 	logging.info(f'[{client_id}] Connected')
 
@@ -290,7 +292,7 @@ async def handle_message(client_id: str, data: dict):
 		reconnect_tokens[reconnect_token] = {'username': username, 'expires': time.time() + 3600}
 
 		users = [
-			{'id': cid, 'username': c['username'], 'cam_on': c.get('cam_on', False), 'mic_on': c.get('mic_on', True), 'screen_on': c.get('screen_on', False), 'rainbow_nick': c.get('rainbow_nick', False)}
+			{'id': cid, 'username': c['username'], 'cam_on': c.get('cam_on', False), 'mic_on': c.get('mic_on', True), 'screen_on': c.get('screen_on', False), 'rainbow_nick': c.get('rainbow_nick', False), 'ghost': c.get('ghost', False)}
 			for cid, c in clients.items()
 			if c['username'] and cid != client_id
 		]
@@ -356,7 +358,7 @@ async def handle_message(client_id: str, data: dict):
 		reconnect_tokens[new_token] = {'username': username, 'expires': time.time() + 3600}
 
 		users = [
-			{'id': cid, 'username': c['username'], 'cam_on': c.get('cam_on', False), 'mic_on': c.get('mic_on', True), 'screen_on': c.get('screen_on', False), 'rainbow_nick': c.get('rainbow_nick', False)}
+			{'id': cid, 'username': c['username'], 'cam_on': c.get('cam_on', False), 'mic_on': c.get('mic_on', True), 'screen_on': c.get('screen_on', False), 'rainbow_nick': c.get('rainbow_nick', False), 'ghost': c.get('ghost', False)}
 			for cid, c in clients.items()
 			if c['username'] and cid != client_id
 		]
@@ -463,6 +465,15 @@ async def handle_message(client_id: str, data: dict):
 			pong_mode = not pong_mode
 			logging.info(f'[{client_id}] Pong mode -> {pong_mode}')
 			await broadcast_all({'type': 'pong_status', 'enabled': pong_mode})
+		elif action == 'ghost_toggle':
+			current = clients[client_id].get('ghost', False)
+			clients[client_id]['ghost'] = not current
+			logging.info(f'[{client_id}] Ghost mode -> {not current}')
+			await broadcast_all({
+				'type'  : 'ghost_status',
+				'id'    : client_id,
+				'ghost' : not current
+			})
 		elif action == 'show_codes':
 			# Private reply to just the dialer - other clients never see the codes.
 			logging.info(f'[{client_id}] Dial code list requested')

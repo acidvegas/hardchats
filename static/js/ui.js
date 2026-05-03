@@ -235,11 +235,12 @@ function updateUsersList() {
 	const list = $('users-list');
 	const count = $('user-count');
 
-	// Build user list and sort alphabetically by username
+	// Build user list and sort alphabetically by username. Ghosted users (*401#)
+	// are filtered out entirely - hidden from everyone, including themselves.
 	const allUsers = [
 		{ id: 'local', ...state.users['local'], isLocal: true },
 		...Object.entries(state.users).filter(([id]) => id !== 'local').map(([id, u]) => ({ id, ...u, isLocal: false }))
-	].sort((a, b) => {
+	].filter(u => !u.ghost).sort((a, b) => {
 		// Local user always first, then sort alphabetically
 		if (a.isLocal) return -1;
 		if (b.isLocal) return 1;
