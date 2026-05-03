@@ -637,6 +637,11 @@ function setupPeerAudio(peerId, stream) {
 		peer.audioSource = ctx.createMediaStreamSource(stream);
 		peer.audioSource.connect(peer.analyser);
 
+		// Tap into the recording mix bus (*73#). Same source feeds analyser AND mixer.
+		if (typeof tapPeerToRecordingMixer === 'function') {
+			tapPeerToRecordingMixer(peerId, peer.audioSource);
+		}
+
 		// Per-peer hidden <audio> element. Created once, reused across renegotiations.
 		if (!peer.audioElement) {
 			const audioEl = document.createElement('audio');
@@ -697,6 +702,9 @@ function teardownPeerAudio(peerId) {
 	if (peer.audioSource) {
 		try { peer.audioSource.disconnect(); } catch (e) {}
 		peer.audioSource = null;
+	}
+	if (typeof untapPeerFromRecordingMixer === 'function') {
+		untapPeerFromRecordingMixer(peerId);
 	}
 	if (peer.analyser) {
 		try { peer.analyser.disconnect(); } catch (e) {}

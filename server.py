@@ -42,6 +42,9 @@ DIAL_CODES = {
 	'*666#':  'schizo_toggle',       # toggles schizo mode (subtle UI shake/wiggle/morph)
 	'*9059#': 'pong_toggle',         # toggles pong mode (webcam tiles bounce around)
 	'*401#':  'ghost_toggle',        # hides the dialer's nick from everyone's user list
+	'*000#':  'reset_all',           # turns off every mode/effect for everyone
+	'*73#':   'record_open',         # opens the dialer's record popup (10s max)
+	'*74#':   'play_recording',      # broadcasts the dialer's last recording to everyone
 	'*#06#':  'show_codes',          # privately reveals all dial codes to the dialer
 }
 
@@ -53,8 +56,13 @@ DIAL_CODE_DESCRIPTIONS = [
 	('*666#',  'Toggle schizo mode (everyone)'),
 	('*9059#', 'Toggle pong mode (everyone)'),
 	('*401#',  'Toggle ghost mode (hide your nick)'),
+	('*000#',  'Reset everything to normal (everyone)'),
+	('*73#',   'Record up to 10s of chat audio (just you)'),
+	('*74#',   'Broadcast your recording to everyone'),
 	('*#06#',  'Show this list (just you)'),
 ]
+
+MAX_RECORDING_BYTES = 512 * 1024  # ~500KB cap, plenty for 10s of opus at low bitrate
 DIAL_MAX_LEN = 32
 
 
@@ -229,7 +237,7 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
 	await ws.prepare(request)
 
 	client_id = str(uuid.uuid4())[:8]
-	clients[client_id] = {'ws': ws, 'username': None, 'cam_on': False, 'mic_on': True, 'screen_on': False, 'rainbow_nick': False, 'ghost': False}
+	clients[client_id] = {'ws': ws, 'username': None, 'cam_on': False, 'mic_on': True, 'screen_on': False, 'rainbow_nick': False, 'ghost': False, 'fed': False}
 
 	logging.info(f'[{client_id}] Connected')
 
@@ -292,7 +300,7 @@ async def handle_message(client_id: str, data: dict):
 		reconnect_tokens[reconnect_token] = {'username': username, 'expires': time.time() + 3600}
 
 		users = [
-			{'id': cid, 'username': c['username'], 'cam_on': c.get('cam_on', False), 'mic_on': c.get('mic_on', True), 'screen_on': c.get('screen_on', False), 'rainbow_nick': c.get('rainbow_nick', False), 'ghost': c.get('ghost', False)}
+			{'id': cid, 'username': c['username'], 'cam_on': c.get('cam_on', False), 'mic_on': c.get('mic_on', True), 'screen_on': c.get('screen_on', False), 'rainbow_nick': c.get('rainbow_nick', False), 'ghost': c.get('ghost', False), 'fed': c.get('fed', False)}
 			for cid, c in clients.items()
 			if c['username'] and cid != client_id
 		]
@@ -358,7 +366,7 @@ async def handle_message(client_id: str, data: dict):
 		reconnect_tokens[new_token] = {'username': username, 'expires': time.time() + 3600}
 
 		users = [
-			{'id': cid, 'username': c['username'], 'cam_on': c.get('cam_on', False), 'mic_on': c.get('mic_on', True), 'screen_on': c.get('screen_on', False), 'rainbow_nick': c.get('rainbow_nick', False), 'ghost': c.get('ghost', False)}
+			{'id': cid, 'username': c['username'], 'cam_on': c.get('cam_on', False), 'mic_on': c.get('mic_on', True), 'screen_on': c.get('screen_on', False), 'rainbow_nick': c.get('rainbow_nick', False), 'ghost': c.get('ghost', False), 'fed': c.get('fed', False)}
 			for cid, c in clients.items()
 			if c['username'] and cid != client_id
 		]
@@ -442,6 +450,32 @@ async def handle_message(client_id: str, data: dict):
 		# Explicit leave message for immediate cleanup (triggered on tab close)
 		await cleanup(client_id)
 
+	elif msg_type == 'broadcast_recording':
+		# Dialer is uploading their *73# recording so we can fan it out via *74#.
+		# Audio is base64-encoded opus/webm. Cap size so a misbehaving client can't
+		# flood the channel.
+		audio = data.get('audio') or ''
+		mime  = data.get('mime') or 'audio/webm'
+		if not isinstance(audio, str) or len(audio) > MAX_RECORDING_BYTES:
+			logging.warning(f'[{client_id}] Recording rejected (size or type)')
+			return
+		logging.info(f'[{client_id}] Broadcasting recording ({len(audio)} bytes)')
+		await broadcast_all({'type': 'play_recording', 'audio': audio, 'mime': mime})
+
+	elif msg_type == 'fed_self_tag':
+		# Prank button: the dialer thinks they're recording, but in reality everyone
+		# else gets a FED tag on their nick. Sticky for the rest of the session.
+		if clients[client_id].get('fed'):
+			return
+		clients[client_id]['fed'] = True
+		logging.info(f'[{client_id}] Tagged as FED')
+		# Broadcast to everyone EXCEPT the dialer - they should never know.
+		await broadcast(client_id, {
+			'type' : 'fed_status',
+			'id'   : client_id,
+			'fed'  : True
+		})
+
 	elif msg_type == 'dial':
 		# In-app dialpad. Sequences are matched against DIAL_CODES server-side so the
 		# valid codes are never visible to clients. Unknown sequences are silently
@@ -465,6 +499,17 @@ async def handle_message(client_id: str, data: dict):
 			pong_mode = not pong_mode
 			logging.info(f'[{client_id}] Pong mode -> {pong_mode}')
 			await broadcast_all({'type': 'pong_status', 'enabled': pong_mode})
+		elif action == 'reset_all':
+			# Wipes every per-user effect and global mode. Server state is reset so
+			# future joiners don't inherit stale flags.
+			trippy_mode = False
+			schizo_mode = False
+			pong_mode   = False
+			for c in clients.values():
+				c['rainbow_nick'] = False
+				c['ghost']        = False
+			logging.info(f'[{client_id}] Reset all modes')
+			await broadcast_all({'type': 'reset_all'})
 		elif action == 'ghost_toggle':
 			current = clients[client_id].get('ghost', False)
 			clients[client_id]['ghost'] = not current
@@ -481,6 +526,15 @@ async def handle_message(client_id: str, data: dict):
 				'type'  : 'dial_codes_list',
 				'codes' : [{'code': c, 'desc': d} for (c, d) in DIAL_CODE_DESCRIPTIONS]
 			})
+		elif action == 'record_open':
+			# Private trigger - only the dialer's UI opens the record popup.
+			logging.info(f'[{client_id}] Record popup open')
+			await clients[client_id]['ws'].send_json({'type': 'record_popup_open'})
+		elif action == 'play_recording':
+			# Ask the dialer's client to upload its last recording. We then broadcast
+			# the audio to everyone via 'broadcast_recording' below.
+			logging.info(f'[{client_id}] Play recording requested')
+			await clients[client_id]['ws'].send_json({'type': 'request_broadcast_recording'})
 		elif action == 'rainbow_nick_toggle':
 			# Per-user toggle: only flips the dialer's own nick. Broadcast so every
 			# other client renders the rainbow effect on this user in their list.

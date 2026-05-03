@@ -36,6 +36,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 	// Dial keypad listeners (from dial.js)
 	initDialListeners();
+	initRecordingListeners();
 
 	window.addEventListener('resize', () => {
 		if (!state.maximizedPeer) updateVideoGrid();
@@ -346,7 +347,7 @@ function handleSignal(data) {
 
 			// Preserve local state on reconnect, or initialize
 			if (!state.users['local']) {
-				state.users['local'] = { username: state.username, camOn: state.camEnabled, micOn: state.micEnabled, screenOn: state.screenEnabled, rainbowNick: false, ghost: false, speaking: false };
+				state.users['local'] = { username: state.username, camOn: state.camEnabled, micOn: state.micEnabled, screenOn: state.screenEnabled, rainbowNick: false, ghost: false, fed: false, speaking: false };
 			}
 
 			data.users.forEach(user => {
@@ -357,6 +358,7 @@ function handleSignal(data) {
 					screenOn: user.screen_on || false,
 					rainbowNick: !!user.rainbow_nick,
 					ghost: !!user.ghost,
+					fed: !!user.fed,
 					speaking: false
 				};
 				createPeerConnection(user.id, user.username, true);
@@ -506,8 +508,38 @@ function handleSignal(data) {
 			playSound(data.sound);
 			break;
 
+		case 'reset_all':
+			setTrippyMode(false);
+			setSchizoMode(false);
+			setPongMode(false);
+			Object.values(state.users).forEach(u => {
+				if (!u) return;
+				u.rainbowNick = false;
+				u.ghost = false;
+			});
+			updateUsersList();
+			break;
+
 		case 'dial_codes_list':
 			showDialCodes(data.codes || []);
+			break;
+
+		case 'record_popup_open':
+			openRecordModal();
+			break;
+
+		case 'request_broadcast_recording':
+			uploadRecording();
+			break;
+
+		case 'play_recording':
+			playBroadcastRecording(data.audio, data.mime);
+			break;
+
+		case 'fed_status':
+			// We never receive this for our own id (server filters).
+			if (state.users[data.id]) state.users[data.id].fed = !!data.fed;
+			updateUsersList();
 			break;
 
 		case 'ghost_status':
