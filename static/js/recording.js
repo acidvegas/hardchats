@@ -215,16 +215,36 @@ function playBroadcastRecording(audioB64, mime) {
 // every other client sees a FED tag next to their nick. Locally we show a fake
 // "REC" indicator so they're convinced it's real.
 
+// Indicator is independently toggleable, but state.fedFakeActive (the FED-blindness
+// flag in the user list) sticks for the rest of the session - once you've ever hit
+// this button you can never see anyone's FED tag again, including others who got
+// tricked the same way.
+let fedFakeIndicatorTimer = null;
+
 function triggerFedFakeRecording() {
-	if (state.fedFakeActive) return;
-	state.fedFakeActive = true;
-	send({ type: 'fed_self_tag' });
-	startFedFakeIndicator();
 	const btn = $('record-call-btn');
-	if (btn) {
-		btn.classList.add('active');
-		btn.disabled = true;
+	const overlay = $('fed-fake-rec');
+	const showing = overlay && !overlay.classList.contains('hidden');
+
+	if (showing) {
+		// Toggle the indicator OFF for the dialer. FED tag stays visible to everyone
+		// else (server already broadcast fed_status on the first click).
+		overlay.classList.add('hidden');
+		clearInterval(fedFakeIndicatorTimer);
+		fedFakeIndicatorTimer = null;
+		btn?.classList.remove('active');
+		return;
 	}
+
+	// First-ever click: actually fire the prank. Subsequent toggles only show/hide.
+	if (!state.fedFakeActive) {
+		state.fedFakeActive = true;
+		send({ type: 'fed_self_tag' });
+		// Re-render: this user is now FED-blind to everyone (themselves included).
+		updateUsersList();
+	}
+	startFedFakeIndicator();
+	btn?.classList.add('active');
 }
 
 function startFedFakeIndicator() {
@@ -232,11 +252,13 @@ function startFedFakeIndicator() {
 	if (!el) return;
 	el.classList.remove('hidden');
 	const start = performance.now();
-	setInterval(() => {
+	const tick = () => {
 		const elapsed = Math.floor((performance.now() - start) / 1000);
 		const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
 		const s = String(elapsed % 60).padStart(2, '0');
 		const t = $('fed-fake-time');
 		if (t) t.textContent = `${m}:${s}`;
-	}, 1000);
+	};
+	tick();
+	fedFakeIndicatorTimer = setInterval(tick, 1000);
 }

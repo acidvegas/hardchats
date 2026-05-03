@@ -57,8 +57,8 @@ DIAL_CODE_DESCRIPTIONS = [
 	('*9059#', 'Toggle pong mode (everyone)'),
 	('*401#',  'Toggle ghost mode (hide your nick)'),
 	('*000#',  'Reset everything to normal (everyone)'),
-	('*73#',   'Record up to 10s of chat audio (just you)'),
-	('*74#',   'Broadcast your recording to everyone'),
+	('*73#',   'Record up to 10s of the chat (everyone you hear)'),
+	('*74#',   'Play your recording for everyone in the chat'),
 	('*#06#',  'Show this list (just you)'),
 ]
 
