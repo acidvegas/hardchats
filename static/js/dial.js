@@ -136,6 +136,14 @@ function stopPong() {
 	pong.container = null;
 }
 
+// Sizes are tracked as a `scale` factor over a baseW/baseH. Hitting an edge
+// grows the tile; hitting another tile shrinks the smaller one (or both if equal).
+const PONG_GROW       = 1.08;
+const PONG_SHRINK     = 0.88;
+const PONG_MIN_SCALE  = 0.35;
+const PONG_MAX_SCALE  = 2.2;
+const PONG_EQUAL_EPS  = 0.001;
+
 // Re-sync the tile map with what's actually in the DOM. Called whenever
 // updateVideoGrid rebuilds tiles while pong mode is active.
 function pongRefreshTiles() {
@@ -148,27 +156,33 @@ function pongRefreshTiles() {
 	tiles.forEach(t => {
 		seen.add(t.id);
 		if (!pong.state.has(t.id)) {
-			const w = t.offsetWidth || 240;
-			const h = t.offsetHeight || 180;
+			const baseW = t.offsetWidth || 240;
+			const baseH = t.offsetHeight || 180;
 			const angle = Math.random() * Math.PI * 2;
 			const speed = 60 + Math.random() * 40; // px/sec — slow glide
 			pong.state.set(t.id, {
-				x: Math.random() * Math.max(1, cw - w),
-				y: Math.random() * Math.max(1, ch - h),
+				x: Math.random() * Math.max(1, cw - baseW),
+				y: Math.random() * Math.max(1, ch - baseH),
 				vx: Math.cos(angle) * speed,
 				vy: Math.sin(angle) * speed,
-				w, h
+				baseW, baseH,
+				scale: 1
 			});
 		} else {
 			const s = pong.state.get(t.id);
-			s.w = t.offsetWidth || s.w;
-			s.h = t.offsetHeight || s.h;
+			s.baseW = t.offsetWidth || s.baseW;
+			s.baseH = t.offsetHeight || s.baseH;
 		}
 	});
 
 	for (const id of pong.state.keys()) {
 		if (!seen.has(id)) pong.state.delete(id);
 	}
+}
+
+function pongClampScale(s) {
+	if (s.scale < PONG_MIN_SCALE) s.scale = PONG_MIN_SCALE;
+	if (s.scale > PONG_MAX_SCALE) s.scale = PONG_MAX_SCALE;
 }
 
 let pongLastT = 0;
@@ -189,22 +203,39 @@ function pongTick(now) {
 		s.x += s.vx * dt;
 		s.y += s.vy * dt;
 
-		if (s.x <= 0)         { s.x = 0;       s.vx = Math.abs(s.vx); }
-		if (s.x + s.w >= cw)  { s.x = cw-s.w;  s.vx = -Math.abs(s.vx); }
-		if (s.y <= 0)         { s.y = 0;       s.vy = Math.abs(s.vy); }
-		if (s.y + s.h >= ch)  { s.y = ch-s.h;  s.vy = -Math.abs(s.vy); }
+		const w = s.baseW * s.scale;
+		const h = s.baseH * s.scale;
+
+		// Edge bounce: each hit grows the tile a little (clamped).
+		let hitEdge = false;
+		if (s.x <= 0)        { s.x = 0;      s.vx = Math.abs(s.vx);  hitEdge = true; }
+		if (s.x + w >= cw)   { s.x = cw-w;   s.vx = -Math.abs(s.vx); hitEdge = true; }
+		if (s.y <= 0)        { s.y = 0;      s.vy = Math.abs(s.vy);  hitEdge = true; }
+		if (s.y + h >= ch)   { s.y = ch-h;   s.vy = -Math.abs(s.vy); hitEdge = true; }
+
+		if (hitEdge) {
+			s.scale *= PONG_GROW;
+			pongClampScale(s);
+			// After growing we may now stick out past the edge - reclamp position.
+			const w2 = s.baseW * s.scale, h2 = s.baseH * s.scale;
+			if (s.x + w2 > cw) s.x = Math.max(0, cw - w2);
+			if (s.y + h2 > ch) s.y = Math.max(0, ch - h2);
+		}
 
 		items.push({ id, s });
 	});
 
-	// Tile-vs-tile collisions (cheap O(n^2), fine for ~10 tiles).
+	// Tile-vs-tile collisions: smaller shrinks, equal -> both shrink.
 	for (let i = 0; i < items.length; i++) {
 		for (let j = i + 1; j < items.length; j++) {
 			const a = items[i].s, b = items[j].s;
-			if (a.x < b.x + b.w && a.x + a.w > b.x &&
-			    a.y < b.y + b.h && a.y + a.h > b.y) {
-				const overlapX = Math.min(a.x + a.w - b.x, b.x + b.w - a.x);
-				const overlapY = Math.min(a.y + a.h - b.y, b.y + b.h - a.y);
+			const aw = a.baseW * a.scale, ah = a.baseH * a.scale;
+			const bw = b.baseW * b.scale, bh = b.baseH * b.scale;
+
+			if (a.x < b.x + bw && a.x + aw > b.x &&
+			    a.y < b.y + bh && a.y + ah > b.y) {
+				const overlapX = Math.min(a.x + aw - b.x, b.x + bw - a.x);
+				const overlapY = Math.min(a.y + ah - b.y, b.y + bh - a.y);
 				if (overlapX < overlapY) {
 					const push = overlapX / 2;
 					if (a.x < b.x) { a.x -= push; b.x += push; }
@@ -216,13 +247,25 @@ function pongTick(now) {
 					else           { a.y += push; b.y -= push; }
 					const tmp = a.vy; a.vy = b.vy; b.vy = tmp;
 				}
+
+				// Size changes: smaller one shrinks; if equal, both shrink.
+				if (Math.abs(a.scale - b.scale) < PONG_EQUAL_EPS) {
+					a.scale *= PONG_SHRINK;
+					b.scale *= PONG_SHRINK;
+				} else if (a.scale < b.scale) {
+					a.scale *= PONG_SHRINK;
+				} else {
+					b.scale *= PONG_SHRINK;
+				}
+				pongClampScale(a);
+				pongClampScale(b);
 			}
 		}
 	}
 
 	items.forEach(({ id, s }) => {
 		const el = document.getElementById(id);
-		if (el) el.style.transform = `translate(${s.x}px, ${s.y}px)`;
+		if (el) el.style.transform = `translate(${s.x}px, ${s.y}px) scale(${s.scale})`;
 	});
 
 	pong.raf = requestAnimationFrame(pongTick);

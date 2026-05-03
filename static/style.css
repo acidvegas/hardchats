@@ -1804,8 +1804,6 @@ button:focus-visible, input:focus-visible {
 
 .dial-key {
 	aspect-ratio: 1;
-	font-size: 1.6rem;
-	font-weight: 600;
 	background: var(--bg-tertiary);
 	color: var(--text-primary);
 	border: 1px solid var(--border);
@@ -1815,6 +1813,27 @@ button:focus-visible, input:focus-visible {
 	-webkit-tap-highlight-color: transparent;
 	touch-action: manipulation;
 	user-select: none;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 2px;
+	padding: 4px 0;
+}
+
+.dial-key-num {
+	font-size: 1.6rem;
+	font-weight: 600;
+	line-height: 1;
+}
+
+.dial-key-letters {
+	font-size: 0.65rem;
+	font-weight: 700;
+	letter-spacing: 0.12em;
+	color: var(--text-muted);
+	line-height: 1;
+	min-height: 0.65rem;
 }
 
 .dial-key:hover {
@@ -1956,63 +1975,147 @@ body.trippy-mode .video-tile video {
 }
 
 /* ========== SCHIZO MODE (*666#) ==========
-   Subtle, slow UI shake + wiggle + skew. Cameras drift independently. */
+   Whole UI falls apart: every panel, button, tile, and label shakes/skews/breaks
+   on its own clock. Filter glitches + RGB text-shadow split on top. */
 
-@keyframes schizo-body {
-	0%   { transform: translate(0, 0) rotate(0deg) skew(0deg, 0deg); }
-	20%  { transform: translate(-2px, 1px) rotate(-0.15deg) skew(0.3deg, -0.2deg); }
-	40%  { transform: translate(1px, -2px) rotate(0.2deg) skew(-0.3deg, 0.2deg); }
-	60%  { transform: translate(2px, 2px) rotate(-0.1deg) skew(0.2deg, 0.3deg); }
-	80%  { transform: translate(-1px, -1px) rotate(0.15deg) skew(-0.4deg, -0.1deg); }
-	100% { transform: translate(0, 0) rotate(0deg) skew(0deg, 0deg); }
+@keyframes schizo-shake-a {
+	0%, 100% { transform: translate(0, 0) rotate(0deg) skew(0deg, 0deg); }
+	15%      { transform: translate(-8px, 4px) rotate(-1.2deg) skew(2deg, -1deg); }
+	30%      { transform: translate(6px, -7px) rotate(1.5deg) skew(-2deg, 1.5deg); }
+	45%      { transform: translate(-4px, 8px) rotate(-0.9deg) skew(1.5deg, 2deg); }
+	60%      { transform: translate(9px, 3px) rotate(1.8deg) skew(-2.5deg, -1deg); }
+	75%      { transform: translate(-7px, -5px) rotate(-1.4deg) skew(2deg, 1deg); }
+	90%      { transform: translate(5px, 6px) rotate(0.8deg) skew(-1.5deg, -1.8deg); }
 }
 
-@keyframes schizo-tile-a {
-	0%, 100% { transform: translate(0, 0) rotate(0deg) scale(1); }
-	25%      { transform: translate(-3px, 2px) rotate(-0.4deg) scale(1.005); }
-	50%      { transform: translate(2px, -3px) rotate(0.5deg) scale(0.995); }
-	75%      { transform: translate(3px, 3px) rotate(-0.3deg) scale(1.008); }
+@keyframes schizo-shake-b {
+	0%, 100% { transform: translate(0, 0) rotate(0deg) skew(0deg, 0deg) scale(1); }
+	20%      { transform: translate(7px, -6px) rotate(2deg) skew(-2.5deg, 2deg) scale(1.02); }
+	40%      { transform: translate(-9px, 5px) rotate(-1.7deg) skew(2deg, -2deg) scale(0.98); }
+	55%      { transform: translate(4px, 8px) rotate(1deg) skew(-1.5deg, 1deg) scale(1.015); }
+	75%      { transform: translate(-6px, -4px) rotate(-2.3deg) skew(2.5deg, -1.5deg) scale(0.985); }
 }
 
-@keyframes schizo-tile-b {
-	0%, 100% { transform: translate(0, 0) rotate(0deg) scale(1); }
-	20%      { transform: translate(2px, -2px) rotate(0.5deg) scale(1.006); }
-	55%      { transform: translate(-3px, 2px) rotate(-0.4deg) scale(0.994); }
-	80%      { transform: translate(-2px, -3px) rotate(0.3deg) scale(1.004); }
+@keyframes schizo-shake-c {
+	0%, 100% { transform: translate(0, 0) rotate(0deg) skew(0deg, 0deg); }
+	25%      { transform: translate(-10px, 7px) rotate(-2deg) skew(-3deg, 2deg); }
+	50%      { transform: translate(8px, -9px) rotate(2.5deg) skew(3deg, -2.5deg); }
+	75%      { transform: translate(-5px, -6px) rotate(-1.5deg) skew(-2deg, 1.5deg); }
 }
 
-@keyframes schizo-video {
-	0%, 100% { transform: scale(1.04) translate(0, 0); filter: hue-rotate(0deg); }
-	33%      { transform: scale(1.06) translate(-4px, 3px); filter: hue-rotate(8deg); }
-	66%      { transform: scale(1.05) translate(3px, -4px); filter: hue-rotate(-6deg); }
+@keyframes schizo-jitter {
+	0%, 100% { transform: translate(0, 0) rotate(0deg); }
+	10%      { transform: translate(-2px, 1px) rotate(-1deg); }
+	20%      { transform: translate(2px, -2px) rotate(1deg); }
+	30%      { transform: translate(-3px, 2px) rotate(-1.5deg); }
+	40%      { transform: translate(3px, 1px) rotate(0.8deg); }
+	50%      { transform: translate(-1px, -3px) rotate(-0.6deg); }
+	60%      { transform: translate(2px, 3px) rotate(1.4deg); }
+	70%      { transform: translate(-3px, -1px) rotate(-1.2deg); }
+	80%      { transform: translate(1px, 2px) rotate(0.9deg); }
+	90%      { transform: translate(-2px, -2px) rotate(-0.7deg); }
 }
 
-body.schizo-mode #app {
-	animation: schizo-body 9s ease-in-out infinite;
+@keyframes schizo-filter {
+	0%, 100% { filter: hue-rotate(0deg) contrast(1) saturate(1); }
+	20%      { filter: hue-rotate(45deg) contrast(1.3) saturate(1.4); }
+	40%      { filter: hue-rotate(-30deg) contrast(0.9) saturate(1.6); }
+	60%      { filter: hue-rotate(80deg) contrast(1.5) saturate(0.7); }
+	80%      { filter: hue-rotate(-60deg) contrast(1.2) saturate(1.8); }
 }
 
+@keyframes schizo-text-glitch {
+	0%, 100% { text-shadow: none; }
+	15%      { text-shadow: 2px 0 #ff0040, -2px 0 #00ffff; }
+	30%      { text-shadow: -3px 0 #ff0040, 3px 0 #00ffff; }
+	45%      { text-shadow: 1px 0 #ff0040, -1px 0 #00ffff, 0 2px #fff200; }
+	60%      { text-shadow: -2px 1px #ff0040, 2px -1px #00ffff; }
+	75%      { text-shadow: 3px 1px #ff0040, -3px -1px #00ffff; }
+	90%      { text-shadow: 1px -2px #ff0040, -1px 2px #00ffff; }
+}
+
+@keyframes schizo-clip {
+	0%, 100%             { clip-path: inset(0 0 0 0); }
+	18%, 18.5%           { clip-path: inset(20% 0 30% 0); }
+	35%, 35.4%           { clip-path: inset(0 25% 0 10%); }
+	52%, 52.6%           { clip-path: inset(40% 0 5% 0); }
+	68%, 68.3%           { clip-path: inset(0 5% 50% 30%); }
+	84%, 84.5%           { clip-path: inset(10% 0 0 0); }
+}
+
+@keyframes schizo-tile-video {
+	0%, 100% { transform: scale(1.05) translate(0, 0); filter: hue-rotate(0deg) contrast(1); }
+	20%      { transform: scale(1.12) translate(-8px, 6px) rotate(2deg); filter: hue-rotate(60deg) contrast(1.3); }
+	40%      { transform: scale(0.98) translate(7px, -8px) rotate(-2.5deg); filter: hue-rotate(-40deg) contrast(0.9) saturate(2); }
+	60%      { transform: scale(1.15) translate(-6px, -7px) rotate(1.8deg); filter: hue-rotate(120deg) saturate(1.8); }
+	80%      { transform: scale(1.02) translate(9px, 5px) rotate(-1.2deg); filter: hue-rotate(-90deg) contrast(1.4); }
+}
+
+/* Top-level chat surface gets the big shake. */
+body.schizo-mode #chat-screen {
+	animation: schizo-shake-a 1.6s ease-in-out infinite, schizo-filter 5s ease-in-out infinite;
+}
+
+/* Each major panel gets an independent rhythm. */
+body.schizo-mode #irc-sidebar  { animation: schizo-shake-b 1.9s ease-in-out infinite; }
+body.schizo-mode #main-area    { animation: schizo-shake-c 1.7s ease-in-out infinite; }
+body.schizo-mode #sidebar      { animation: schizo-shake-b 2.1s ease-in-out infinite reverse; }
+body.schizo-mode #controls     { animation: schizo-jitter 0.8s ease-in-out infinite; }
+body.schizo-mode #app-footer   { animation: schizo-jitter 1.1s ease-in-out infinite reverse; }
+body.schizo-mode #video-grid   { animation: schizo-shake-c 2.3s ease-in-out infinite; }
+
+/* Buttons jitter independently. */
+body.schizo-mode .control-btn,
+body.schizo-mode #irc-toggle,
+body.schizo-mode #connect-btn,
+body.schizo-mode .btn-primary,
+body.schizo-mode .btn-secondary {
+	animation: schizo-jitter 0.5s ease-in-out infinite;
+}
+body.schizo-mode .control-btn:nth-child(2n),
+body.schizo-mode .btn-primary:nth-child(2n) { animation-delay: -0.2s; animation-duration: 0.7s; }
+body.schizo-mode .control-btn:nth-child(3n) { animation-delay: -0.35s; animation-duration: 0.6s; }
+
+/* Sidebar list items - each user wobbles. */
+body.schizo-mode .user-item {
+	animation: schizo-jitter 0.9s ease-in-out infinite;
+}
+body.schizo-mode .user-item:nth-child(2n) { animation-delay: -0.3s; animation-duration: 1.1s; }
+body.schizo-mode .user-item:nth-child(3n) { animation-delay: -0.5s; animation-duration: 1.3s; }
+
+/* IRC chat lines glitch and clip-skip. */
+body.schizo-mode .irc-msg {
+	animation: schizo-jitter 1.2s ease-in-out infinite, schizo-clip 4s steps(1) infinite;
+}
+body.schizo-mode .irc-msg:nth-child(2n) { animation-delay: -0.4s, -1s; }
+body.schizo-mode .irc-msg:nth-child(3n) { animation-delay: -0.7s, -2s; }
+
+/* Chromatic aberration on text - the headline glitch effect. */
+body.schizo-mode h1,
+body.schizo-mode h2,
+body.schizo-mode h3,
+body.schizo-mode .timer,
+body.schizo-mode .footer-brand,
+body.schizo-mode .user-name,
+body.schizo-mode .nick,
+body.schizo-mode #captcha-question,
+body.schizo-mode #user-count-home {
+	animation: schizo-text-glitch 0.6s steps(1) infinite;
+}
+
+/* Video tiles and their inner videos go fully unhinged. */
 body.schizo-mode .video-tile {
-	animation: schizo-tile-a 9s ease-in-out infinite;
+	animation: schizo-shake-b 1.4s ease-in-out infinite;
 }
-
-body.schizo-mode .video-tile:nth-child(2n) {
-	animation: schizo-tile-b 8s ease-in-out infinite;
-	animation-delay: -2s;
-}
-
-body.schizo-mode .video-tile:nth-child(3n) {
-	animation: schizo-tile-a 10s ease-in-out infinite;
-	animation-delay: -4s;
-}
+body.schizo-mode .video-tile:nth-child(2n) { animation: schizo-shake-a 1.7s ease-in-out infinite; animation-delay: -0.3s; }
+body.schizo-mode .video-tile:nth-child(3n) { animation: schizo-shake-c 1.5s ease-in-out infinite; animation-delay: -0.6s; }
+body.schizo-mode .video-tile:nth-child(4n) { animation: schizo-shake-b 1.9s ease-in-out infinite reverse; animation-delay: -0.9s; }
 
 body.schizo-mode .video-tile video {
-	animation: schizo-video 12s ease-in-out infinite;
+	animation: schizo-tile-video 2.2s ease-in-out infinite, schizo-clip 5s steps(1) infinite;
 }
-
-body.schizo-mode .video-tile:nth-child(2n) video {
-	animation-delay: -3s;
-	animation-duration: 14s;
-}
+body.schizo-mode .video-tile:nth-child(2n) video { animation-duration: 2.6s, 4.3s; animation-delay: -0.5s, -1.2s; }
+body.schizo-mode .video-tile:nth-child(3n) video { animation-duration: 1.9s, 6s;   animation-delay: -1s,   -2s; }
 
 /* ========== PONG MODE (*9059#) ==========
    Tiles get position:absolute and JS animates their transform. */
@@ -2031,6 +2134,7 @@ body.pong-mode .video-tile {
 	height: 180px;
 	will-change: transform;
 	transition: none;
+	transform-origin: 0 0;
 }
 
 /* Pong + schizo together: don't fight over transform. Pong wins. */
