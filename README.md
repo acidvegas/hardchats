@@ -2,6 +2,10 @@
 
 ![](./.screens/preview.png)
 
+## About
+HARDCHATS is a lightweight voice & video chat platform for small groups. It runs entirely through a self-hosted [coturn](https://github.com/coturn/coturn) TURN relay rather than direct peer-to-peer, so participants never expose their IPs to each other. There's an optional IRC sidebar that bridges into a regular IRC channel for text chat.
+
+It's intentionally admin-less - there are no moderators, no roles, no kicks, no bans. The room is self-moderated by whoever's in it. To keep that workable, the client ships with a couple of safety levers:
 
 ## Setup
 
@@ -82,34 +86,6 @@ loadmodule "webserver";
 loadmodule "websocket";
 loadmodule "websocket_common";
 ```
-
-## Roadmap
-###### Features
-- [ ] End-to-end encryption
-- [ ] Low bandwidth mode
-
-###### TURN Improvements
-- [ ] Utilize `--use-auth-secret` and `--static-auth-secret=${TURN_STATIC_AUTH_SECRET}`
-- [ ] Add TLS support for TURN
-- [ ] Add `--no-loopback-peers` & `--no-multicast-peers`
-
-###### Mobile Issues
-- [ ] Dont start with user list open by default on mobile
-- [ ] User list & chatbox should be full sized when toggled on or off.
-- [ ] Hang up button to close the tab
-
-###### Touchups
-- [ ] Cleaner IRC chat *(hide server notices and redundant content)*
-- [ ] Better captcha system to prevent bot abuse
-- [ ] Add a TEST button for the audio device selected in the user settings menu.
-- [ ] Move debug buton into user settings
-
-###### Fancy Pipe Dreams
-- [ ] Improve debug menu to show resource utilization of ram, cpu, inbound and outbound traffic, network information, connected duration, better live logs, able to toggle debug mode on or off to retain the last 5000 lines of logs so you can conduct actions when closing the debug menu and check back on the debug logs afterwards.
-- [ ] Option in the settings menu to turn on no-cam tile mode, where all users have a box on the screen, even if they are not on camera *(Remembered via cookies)*
-- [ ] Color picker to replace the green accent with your own color choice *(Remembered via cookies)*
-- [ ] Milkdrop animations from the audio *(either background or for no-cam tile mode when people speak)*
-- [ ] Multiple room support + lobby system
 
 ## Contribute
 Come join us on `irc.supernets.org` in `#hardchats` for testing, feedback, & collaboration!
