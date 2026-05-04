@@ -2362,7 +2362,7 @@ body.pong-mode.schizo-mode .video-tile video {
 	filter: grayscale(0.6);
 }
 
-/* Small "BR" pill on anyone currently in the breakout room. Visible to everyone. */
+/* Small "BR" pill on anyone currently in the breakout room. Only rendered for viewers who are themselves in the breakout room. */
 .breakout-tag {
 	display: inline-block;
 	margin-left: 6px;
