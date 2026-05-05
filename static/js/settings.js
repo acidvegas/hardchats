@@ -430,10 +430,12 @@ function updateSettingsToggles() {
 	const notifToggle = $('toggle-notifications');
 	const soundToggle = $('toggle-sounds');
 	const lowBwToggle = $('toggle-lowbandwidth');
+	const speakerToggle = $('toggle-speakermode');
 
 	if (notifToggle) notifToggle.dataset.enabled = state.settings.notifications;
 	if (soundToggle) soundToggle.dataset.enabled = state.settings.sounds;
 	if (lowBwToggle) lowBwToggle.dataset.enabled = state.settings.lowBandwidth;
+	if (speakerToggle) speakerToggle.dataset.enabled = state.settings.speakerMode !== false;
 }
 
 // Toggle button click handler
@@ -482,6 +484,10 @@ document.addEventListener('DOMContentLoaded', () => {
 	$('toggle-notifications')?.addEventListener('click', () => handleToggleClick('toggle-notifications', 'notifications'));
 	$('toggle-sounds')?.addEventListener('click', () => handleToggleClick('toggle-sounds', 'sounds'));
 	$('toggle-lowbandwidth')?.addEventListener('click', () => handleToggleClick('toggle-lowbandwidth', 'lowBandwidth'));
+	$('toggle-speakermode')?.addEventListener('click', () => {
+		handleToggleClick('toggle-speakermode', 'speakerMode');
+		if (typeof rebuildAudioSinksForSpeakerMode === 'function') rebuildAudioSinksForSpeakerMode();
+	});
 
 	// Close modal when clicking outside
 	$('settings-modal')?.addEventListener('click', (e) => {

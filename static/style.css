@@ -1472,11 +1472,29 @@ body {
 	.settings-preview {
 		max-height: 100px;
 	}
+
+	/* Mobile-only settings rows (e.g. Speaker Mode toggle) */
+	.mobile-only-setting { display: flex; }
+	/* Speaker device picker is useless on mobile - setSinkId isn't supported and
+	   enumerateDevices returns nothing meaningful. Hide it; the Speaker Mode toggle
+	   replaces it. */
+	.desktop-only-setting { display: none; }
 }
+
+/* Default visibility outside the mobile breakpoint. */
+.mobile-only-setting { display: none; }
 
 @media (max-width: 480px) {
 	.video-tile { border-radius: 8px; }
 	.video-tile .username { font-size: 0.75rem; padding: 0.5rem 0.75rem; }
+}
+
+/* Subtle hint text inside settings labels (e.g. "(loud)" next to Speaker Mode). */
+.settings-hint {
+	font-weight: 400;
+	color: var(--text-muted);
+	margin-left: 0.25rem;
+	font-size: 0.85em;
 }
 
 /* ========== FOCUS STATES ========== */

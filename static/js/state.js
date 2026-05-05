@@ -48,7 +48,12 @@ const state = {
 	settings: {
 		notifications: true,
 		sounds: true,
-		lowBandwidth: false
+		lowBandwidth: false,
+		// Mobile audio routing. true = remote audio plays through a hidden <video>
+		// element, which iOS classifies as media playback (loudspeaker). false = plays
+		// through <audio>, which under an active mic becomes communication category
+		// (earpiece). Desktop browsers route the same regardless of element tag.
+		speakerMode: true
 	},
 	// IRC state
 	irc: {

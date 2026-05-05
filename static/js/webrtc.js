@@ -49,10 +49,16 @@ function startAudioPlaybackPrimer() {
 		gain.connect(dest);
 		source.start();
 
-		const primer = document.createElement('audio');
+		// Tag matches the per-peer sink (see setupPeerAudio). Using <video> here too
+		// keeps the entire audio session in the same iOS category so the first peer
+		// audio element doesn't accidentally re-classify it.
+		const useVideo = state.settings?.speakerMode !== false;
+		const primer = document.createElement(useVideo ? 'video' : 'audio');
 		primer.autoplay = true;
 		primer.playsInline = true;
+		primer.muted = false;
 		primer.id = 'audio-playback-primer';
+		primer.dataset.audioMode = useVideo ? 'video' : 'audio';
 		primer.srcObject = dest.stream;
 		const container = document.getElementById('peer-audio-container') || document.body;
 		container.appendChild(primer);
@@ -609,13 +615,19 @@ async function flushPendingCandidates(peerId) {
 
 // Build (or rebuild) the audio path for a peer:
 //
-//   stream  ->  <audio autoplay playsinline>.srcObject   (output: speakers)
-//   stream  ->  MediaStreamSource -> AnalyserNode        (speaking indicator only)
+//   stream  ->  <video|audio autoplay playsinline>.srcObject   (output: speaker/earpiece)
+//   stream  ->  MediaStreamSource -> AnalyserNode              (speaking indicator only)
 //
-// Audio output is the canonical WebRTC pattern: <audio>.srcObject = remoteStream
+// Audio output is the canonical WebRTC pattern: media-element.srcObject = remoteStream
 // directly. Mobile browsers (Android Chrome, iOS Safari) treat WebRTC remote streams
 // as real network media for autoplay and audio-session purposes, so playback starts
 // reliably as long as the page has had any prior user activation (the Connect tap).
+//
+// Tag depends on settings.speakerMode (default true). On iOS, a <video> element
+// playing a WebRTC stream gets the media audio-session category (loudspeaker), while
+// <audio> playing the same stream while a mic capture is active gets the communication
+// category (earpiece - quiet). Toggling speakerMode tears down each peer's element
+// and recreates it with the new tag.
 //
 // The previous attempt routed audio through a Web Audio GainNode + MediaStreamDestination
 // to support a 0-150% volume slider. That Web-Audio-derived stream is not classified as
@@ -648,15 +660,26 @@ function setupPeerAudio(peerId, stream) {
 			tapPeerToRecordingMixer(peerId, peer.audioSource);
 		}
 
-		// Per-peer hidden <audio> element. Created once, reused across renegotiations.
+		// Per-peer hidden sink element. Created once, reused across renegotiations.
+		// Tag depends on speakerMode: <video> routes through media category on iOS
+		// (loudspeaker), <audio> routes through communication category (earpiece).
+		// If the mode flipped at runtime, the old element is recreated with the new tag.
+		const desiredMode = state.settings?.speakerMode !== false ? 'video' : 'audio';
+		if (peer.audioElement && peer.audioElement.dataset.audioMode !== desiredMode) {
+			try { peer.audioElement.srcObject = null; } catch (e) {}
+			try { peer.audioElement.remove(); } catch (e) {}
+			peer.audioElement = null;
+		}
 		if (!peer.audioElement) {
-			const audioEl = document.createElement('audio');
-			audioEl.autoplay = true;
-			audioEl.playsInline = true;
-			audioEl.id = `peer-audio-${peerId}`;
+			const sinkEl = document.createElement(desiredMode);
+			sinkEl.autoplay = true;
+			sinkEl.playsInline = true;
+			sinkEl.muted = false;
+			sinkEl.dataset.audioMode = desiredMode;
+			sinkEl.id = `peer-audio-${peerId}`;
 			const container = document.getElementById('peer-audio-container') || document.body;
-			container.appendChild(audioEl);
-			peer.audioElement = audioEl;
+			container.appendChild(sinkEl);
+			peer.audioElement = sinkEl;
 		}
 		// Update srcObject if the stream identity changed (renegotiation can hand us a
 		// fresh MediaStream). Calling .play() again is harmless on the same stream.
@@ -700,6 +723,28 @@ function setupPeerAudio(peerId, stream) {
 		console.log(`[Audio] setup for ${peerId}, ctx state: ${ctx.state}`);
 	} catch (e) {
 		console.error(`[Audio] setupPeerAudio failed for ${peerId}:`, e);
+	}
+}
+
+// Recreate the playback primer + every peer's audio sink so the new speakerMode
+// (audio vs video tag) takes effect. Called from the settings toggle handler.
+function rebuildAudioSinksForSpeakerMode() {
+	if (state.audioPrimer) {
+		try { state.audioPrimer.srcObject = null; } catch (e) {}
+		try { state.audioPrimer.remove(); } catch (e) {}
+		state.audioPrimer = null;
+	}
+	if (state.audioPrimerSource) {
+		try { state.audioPrimerSource.stop(); } catch (e) {}
+		state.audioPrimerSource = null;
+	}
+	startAudioPlaybackPrimer();
+
+	for (const [peerId, peer] of Object.entries(state.peers)) {
+		const stream = peer.audioElement?.srcObject || peer.stream;
+		if (stream && stream.getAudioTracks && stream.getAudioTracks().length > 0) {
+			setupPeerAudio(peerId, stream);
+		}
 	}
 }
 
