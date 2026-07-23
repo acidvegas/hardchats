@@ -160,8 +160,12 @@ async def index(request: web.Request) -> web.Response:
 	'''Serve the index.html file'''
 
 	with open('static/index.html', 'r') as f:
+		# Cache-bust every JS/CSS asset by stamping the current version into the {{V}}
+		# placeholder on each URL. Bump config.VERSION on deploy to force fresh loads
+		# past any proxy/CDN that ignores no-cache headers.
+		html = f.read().replace('{{V}}', config.VERSION)
 		return web.Response(
-			text=f.read(), 
+			text=html,
 			content_type='text/html',
 			headers={
 				'Cache-Control' : 'no-cache, no-store, must-revalidate',
