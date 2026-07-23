@@ -26,6 +26,9 @@ const state = {
 	micEnabled: true,
 	camEnabled: false,
 	screenEnabled: false,
+	// Which camera to capture: 'user' (front, default) or 'environment' (back). Flipped
+	// via the mobile flip-camera button.
+	facingMode: 'user',
 	volumeEnabled: true,
 	maximizedPeer: null,
 	sidebarOpen: true,

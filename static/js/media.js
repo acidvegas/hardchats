@@ -42,7 +42,7 @@ async function toggleCam() {
 	if (!state.camEnabled) {
 		try {
 			const videoStream = await navigator.mediaDevices.getUserMedia({
-				video: getVideoConstraints()
+				video: { ...getVideoConstraints(), facingMode: { ideal: state.facingMode || 'user' } }
 			});
 			const videoTrack = videoStream.getVideoTracks()[0];
 			state.localStream.addTrack(videoTrack);
@@ -107,6 +107,49 @@ async function toggleCam() {
 
 	$('cam-btn').classList.toggle('active', state.camEnabled);
 	updateUI();
+}
+
+// Mobile flip-camera button: switch between front ('user') and back ('environment').
+// If the camera is off, we just remember the choice for next time it's turned on.
+async function flipCamera() {
+	state.facingMode = (state.facingMode === 'environment') ? 'user' : 'environment';
+
+	if (!state.camEnabled) {
+		updateUI();
+		return;
+	}
+
+	try {
+		const newStream = await navigator.mediaDevices.getUserMedia({
+			video: { ...getVideoConstraints(), facingMode: { ideal: state.facingMode } }
+		});
+		const newTrack = newStream.getVideoTracks()[0];
+
+		// Swap the camera track in the local stream (leave any screen-share track alone).
+		const oldTrack = state.localStream.getVideoTracks()[0];
+		if (oldTrack) {
+			oldTrack.stop();
+			state.localStream.removeTrack(oldTrack);
+		}
+		state.localStream.addTrack(newTrack);
+
+		// Replace on each peer's CAMERA video sender (skip the screen-share sender).
+		for (const [peerId, peer] of Object.entries(state.peers)) {
+			const sender = peer.pc.getSenders().find(s => s.track && s.track.kind === 'video' && s !== peer.screenSender);
+			if (sender) await sender.replaceTrack(newTrack);
+		}
+
+		// Re-apply outgoing shaping to the fresh sender track.
+		if (typeof applyVideoBitrateCap === 'function') applyVideoBitrateCap();
+		if (typeof applyAudioOnlyGatingAll === 'function') applyAudioOnlyGatingAll();
+
+		updateVideoGrid();
+		console.log('[Camera] Flipped to', state.facingMode);
+	} catch (e) {
+		console.error('[Camera] Flip failed:', e);
+		// Revert the desired facing so the button state stays truthful.
+		state.facingMode = (state.facingMode === 'environment') ? 'user' : 'environment';
+	}
 }
 
 async function toggleScreen() {

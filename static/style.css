@@ -1475,6 +1475,8 @@ body {
 
 	/* Mobile-only settings rows (e.g. Speaker Mode toggle) */
 	.mobile-only-setting { display: flex; }
+	/* Mobile-only controls (e.g. flip-camera button) */
+	.mobile-only { display: flex; }
 	/* Speaker device picker is useless on mobile - setSinkId isn't supported and
 	   enumerateDevices returns nothing meaningful. Hide it; the Speaker Mode toggle
 	   replaces it. */
@@ -1483,6 +1485,7 @@ body {
 
 /* Default visibility outside the mobile breakpoint. */
 .mobile-only-setting { display: none; }
+.mobile-only { display: none; }
 
 @media (max-width: 480px) {
 	.video-tile { border-radius: 8px; }
