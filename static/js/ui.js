@@ -109,7 +109,6 @@ function updateVideoGrid() {
 		maxView.innerHTML = createVideoTile(maxUser, true);
 		const tile = maxView.querySelector('.video-tile');
 		if (tile) tile.onclick = () => exitMaximized();
-		wireTileFlip(tile);
 		attachStreamToTile(maxUser.id, maxUser.stream, maxUser.isLocal);
 
 		thumbStrip.innerHTML = '';
@@ -118,7 +117,6 @@ function updateVideoGrid() {
 			thumb.className = 'thumbnail';
 			thumb.innerHTML = createVideoTile(user, false);
 			thumb.onclick = () => maximizeVideo(user.id);
-			wireTileFlip(thumb.querySelector('.video-tile'));
 			thumbStrip.appendChild(thumb);
 			attachStreamToTile(user.id, user.stream, user.isLocal);
 		});
@@ -156,7 +154,6 @@ function updateVideoGrid() {
 			tile.innerHTML = createVideoTile(user, false);
 			const tileEl = tile.firstElementChild;
 			tileEl.onclick = () => maximizeVideo(user.id);
-			wireTileFlip(tileEl);
 			grid.appendChild(tileEl);
 			attachStreamToTile(user.id, user.stream, user.isLocal);
 		});
@@ -171,28 +168,12 @@ function updateVideoGrid() {
 function createVideoTile(user, isMaximized) {
 	const isScreen = user.isScreen || user.id.includes('-screen');
 	const isLocalUser = user.isLocal && !isScreen;
-	// Flip-camera overlay button lives on your own camera tile (mobile only). Keeps it
-	// out of the crowded top control bar and matches how native video apps place it.
-	const flipBtn = isLocalUser
-		? `<button class="tile-flip-btn mobile-only" title="Flip Camera"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 4h-3.17L15 2H9L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm-8 3c.98 0 1.87.31 2.6.84l-1.1 1.1c-.44-.28-.95-.44-1.5-.44-1.65 0-3 1.35-3 3h1.75L8.5 16.75 6.25 14.5H8c0-2.21 1.79-4 4-4zm0 10c-.98 0-1.87-.31-2.6-.84l1.1-1.1c.44.28.95.44 1.5.44 1.65 0 3-1.35 3-3h-1.75l2.25-2.25 2.25 2.25H16c0 2.21-1.79 4-4 4z"/></svg></button>`
-		: '';
 	return `
 		<div class="video-tile ${user.isLocal ? 'local' : ''} ${user.speaking ? 'speaking' : ''} ${isMaximized ? 'maximized' : ''} ${isScreen ? 'screen-share' : ''}" id="tile-${user.id}">
 			<video autoplay playsinline ${user.isLocal ? 'muted' : ''}></video>
-			${flipBtn}
 			<div class="username">${isScreen ? '🖥️ ' : ''}${escapeHtml(user.username)}${isLocalUser ? ' <span class="you">(you)</span>' : ''}</div>
 		</div>
 	`;
-}
-
-// Wire the flip-camera overlay button inside a tile (stops the click from also
-// maximizing/minimizing the tile).
-function wireTileFlip(tileEl) {
-	const flipBtn = tileEl?.querySelector('.tile-flip-btn');
-	if (flipBtn) flipBtn.onclick = (e) => {
-		e.stopPropagation();
-		if (typeof flipCamera === 'function') flipCamera();
-	};
 }
 
 function attachStreamToTile(id, stream, isLocal) {

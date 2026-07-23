@@ -26,6 +26,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 	if (typeof initVoiceChangerListeners === 'function') initVoiceChangerListeners();
 	$('mic-btn').addEventListener('click', toggleMic);
 	$('cam-btn').addEventListener('click', toggleCam);
+	$('flip-cam-btn')?.addEventListener('click', flipCamera);
 	$('screen-btn').addEventListener('click', toggleScreen);
 	$('volume-btn').addEventListener('click', toggleVolume);
 	$('users-btn').addEventListener('click', toggleSidebar);
