@@ -1498,6 +1498,9 @@ body {
    Display-only - the stream sent to other people is unaffected. Never mirror a screen share. */
 .video-tile.local:not(.screen-share) video { transform: scaleX(-1); }
 
+/* Flip-camera button reads as an enabled action (brighter than the default grey icon). */
+#flip-cam-btn { color: var(--text-primary); }
+
 @media (max-width: 480px) {
 	.video-tile { border-radius: 8px; }
 	.video-tile .username { font-size: 0.75rem; padding: 0.5rem 0.75rem; }

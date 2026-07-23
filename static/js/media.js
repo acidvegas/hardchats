@@ -106,50 +106,62 @@ async function toggleCam() {
 	}
 
 	$('cam-btn').classList.toggle('active', state.camEnabled);
+	// Flip-camera button is only useful when the camera is on (mobile shows it via CSS).
+	$('flip-cam-btn')?.classList.toggle('hidden', !state.camEnabled);
 	updateUI();
 }
 
-// Mobile flip-camera button: switch between front ('user') and back ('environment').
-// If the camera is off, we just remember the choice for next time it's turned on.
-async function flipCamera() {
-	state.facingMode = (state.facingMode === 'environment') ? 'user' : 'environment';
+// Acquire a camera track for the given facing and wire it into the local stream + every
+// peer's camera sender. Removes any leftover camera track first (screen-share lives on a
+// separate stream, so it's untouched).
+async function swapCameraTrack(facing) {
+	const stream = await navigator.mediaDevices.getUserMedia({
+		video: { ...getVideoConstraints(), facingMode: { ideal: facing } }
+	});
+	const track = stream.getVideoTracks()[0];
 
-	if (!state.camEnabled) {
-		updateUI();
-		return;
+	state.localStream.getVideoTracks().forEach(t => {
+		t.stop();
+		state.localStream.removeTrack(t);
+	});
+	state.localStream.addTrack(track);
+
+	for (const [peerId, peer] of Object.entries(state.peers)) {
+		const sender = peer.pc.getSenders().find(s => s.track && s.track.kind === 'video' && s !== peer.screenSender);
+		if (sender) await sender.replaceTrack(track);
 	}
+}
+
+// Mobile flip-camera button: switch between front ('user') and back ('environment').
+// The button is only shown while the camera is on (see toggleCam), so there's always a
+// camera to flip.
+async function flipCamera() {
+	if (!state.camEnabled) return;
+
+	const prev = state.facingMode;
+	const next = (prev === 'environment') ? 'user' : 'environment';
+
+	// Release the current camera BEFORE opening the other one - many phones can't hold
+	// both cameras at once, which would make getUserMedia throw and the flip silently fail.
+	state.localStream.getVideoTracks().forEach(t => {
+		t.stop();
+		state.localStream.removeTrack(t);
+	});
 
 	try {
-		const newStream = await navigator.mediaDevices.getUserMedia({
-			video: { ...getVideoConstraints(), facingMode: { ideal: state.facingMode } }
-		});
-		const newTrack = newStream.getVideoTracks()[0];
-
-		// Swap the camera track in the local stream (leave any screen-share track alone).
-		const oldTrack = state.localStream.getVideoTracks()[0];
-		if (oldTrack) {
-			oldTrack.stop();
-			state.localStream.removeTrack(oldTrack);
-		}
-		state.localStream.addTrack(newTrack);
-
-		// Replace on each peer's CAMERA video sender (skip the screen-share sender).
-		for (const [peerId, peer] of Object.entries(state.peers)) {
-			const sender = peer.pc.getSenders().find(s => s.track && s.track.kind === 'video' && s !== peer.screenSender);
-			if (sender) await sender.replaceTrack(newTrack);
-		}
-
-		// Re-apply outgoing shaping to the fresh sender track.
-		if (typeof applyVideoBitrateCap === 'function') applyVideoBitrateCap();
-		if (typeof applyAudioOnlyGatingAll === 'function') applyAudioOnlyGatingAll();
-
-		updateVideoGrid();
-		console.log('[Camera] Flipped to', state.facingMode);
+		state.facingMode = next;
+		await swapCameraTrack(next);
+		console.log('[Camera] Flipped to', next);
 	} catch (e) {
-		console.error('[Camera] Flip failed:', e);
-		// Revert the desired facing so the button state stays truthful.
-		state.facingMode = (state.facingMode === 'environment') ? 'user' : 'environment';
+		console.error('[Camera] Flip failed, restoring previous camera:', e);
+		state.facingMode = prev;
+		try { await swapCameraTrack(prev); } catch (e2) { console.error('[Camera] Restore failed:', e2); }
 	}
+
+	// Re-apply outgoing shaping to the fresh sender track.
+	if (typeof applyVideoBitrateCap === 'function') applyVideoBitrateCap();
+	if (typeof applyAudioOnlyGatingAll === 'function') applyAudioOnlyGatingAll();
+	updateVideoGrid();
 }
 
 async function toggleScreen() {
