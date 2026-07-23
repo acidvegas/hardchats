@@ -90,20 +90,23 @@ function closeDialCodes() {
 
 // Apply or remove the trippy-mode class on <body>. Server tells us when to flip via
 // 'trippy_status' broadcasts; new joiners get the current value in the 'users' message.
+// We always track the server truth in state.* but only render the effect when NOT in
+// car mode - so toggling car mode off later re-applies whatever's currently active.
 function setTrippyMode(enabled) {
 	state.trippyMode = !!enabled;
-	document.body.classList.toggle('trippy-mode', state.trippyMode);
+	document.body.classList.toggle('trippy-mode', state.trippyMode && !state.settings.carMode);
 }
 
 function setSchizoMode(enabled) {
 	state.schizoMode = !!enabled;
-	document.body.classList.toggle('schizo-mode', state.schizoMode);
+	document.body.classList.toggle('schizo-mode', state.schizoMode && !state.settings.carMode);
 }
 
 function setPongMode(enabled) {
 	state.pongMode = !!enabled;
-	document.body.classList.toggle('pong-mode', state.pongMode);
-	if (state.pongMode) startPong();
+	const on = state.pongMode && !state.settings.carMode;
+	document.body.classList.toggle('pong-mode', on);
+	if (on) startPong();
 	else stopPong();
 }
 

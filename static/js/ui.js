@@ -29,6 +29,16 @@ function updateVideoGrid() {
 	const maxView = $('maximized-video');
 	const thumbStrip = $('thumbnail-strip');
 
+	// Car mode: audio-only. Render no video tiles at all. Incoming video is also paused
+	// at every sender (car mode broadcasts audio_only), so there's nothing to show.
+	if (state.settings.carMode) {
+		state.maximizedPeer = null;
+		grid.innerHTML = '';
+		$('maximized-view')?.classList.add('hidden');
+		grid.classList.remove('hidden');
+		return;
+	}
+
 	const camUsers = [];
 
 	// Add local camera if enabled

@@ -1,0 +1,108 @@
+<!-- hardchats - Developed by acidvegas in HTML (https://github.com/acidvegas) -->
+<!-- static/audiofx-test.html -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>HardChats Voice FX - Isolated Test</title>
+	<style>
+		body { font-family: system-ui, sans-serif; background: #0a0a0a; color: #eee; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+		h1 { color: #a3e635; }
+		.warn { background: #3a1a1a; border: 1px solid #a33; padding: 0.75rem 1rem; border-radius: 8px; font-size: 0.9rem; }
+		button { background: #1a1a1a; color: #eee; border: 1px solid #444; border-radius: 6px; padding: 0.5rem 0.9rem; cursor: pointer; font-size: 0.9rem; }
+		button.on { border-color: #a3e635; color: #a3e635; }
+		.presets button { margin: 0.2rem; }
+		.row { display: flex; align-items: center; gap: 0.75rem; margin: 0.6rem 0; }
+		.row label { width: 110px; font-size: 0.9rem; }
+		.row input[type=range] { flex: 1; accent-color: #a3e635; }
+		.val { width: 48px; text-align: right; font-family: monospace; color: #a3e635; }
+		code { background: #1a1a1a; padding: 0.1rem 0.35rem; border-radius: 4px; }
+		section { border: 1px solid #333; border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+	</style>
+</head>
+<body>
+	<h1>Voice FX &mdash; Isolated Test</h1>
+	<p class="warn"><b>Use headphones.</b> This loops your mic straight back to your speakers to let you hear the effect &mdash; without headphones you'll get feedback/echo. This page is not part of the app; it just loads the same <code>audiofx.js</code> DSP so you can verify it (especially <b>Pitch</b>) before it's trusted in the live room.</p>
+
+	<section>
+		<button id="start">Start mic loopback</button>
+		<span id="status" style="margin-left:0.75rem; color:#888;">idle</span>
+	</section>
+
+	<section id="controls" style="display:none;">
+		<div class="presets">
+			<b style="display:block;margin-bottom:0.4rem;">Presets:</b>
+			<button data-preset="none">Normal</button>
+			<button data-preset="chipmunk">Chipmunk</button>
+			<button data-preset="demon">Demon</button>
+			<button data-preset="robot">Robot</button>
+			<button data-preset="telephone">Telephone</button>
+			<button data-preset="alien">Alien</button>
+		</div>
+		<div class="row"><label>Pitch (semitones)</label><input type="range" id="pitch" min="-12" max="12" step="1" value="0"><span class="val" id="pitch-v">0</span></div>
+		<div class="row"><label>Reverb</label><input type="range" id="reverb" min="0" max="100" value="0"><span class="val" id="reverb-v">0%</span></div>
+		<div class="row"><label>Distortion</label><input type="range" id="distortion" min="0" max="100" value="0"><span class="val" id="distortion-v">0%</span></div>
+		<div class="row"><label>Robot</label><input type="range" id="robot" min="0" max="100" value="0"><span class="val" id="robot-v">0%</span></div>
+		<div class="row"><label>Telephone</label><button id="telephone">off</button></div>
+	</section>
+
+	<script src="/static/js/audiofx.js"></script>
+	<script>
+		const PRESETS = {
+			none:      { pitch: 0,   reverb: 0,    distortion: 0,    robot: 0,   telephone: false },
+			chipmunk:  { pitch: 7,   reverb: 0,    distortion: 0,    robot: 0,   telephone: false },
+			demon:     { pitch: -7,  reverb: 0.25, distortion: 0.15, robot: 0,   telephone: false },
+			robot:     { pitch: 0,   reverb: 0,    distortion: 0,    robot: 0.9, telephone: false },
+			telephone: { pitch: 0,   reverb: 0,    distortion: 0.1,  robot: 0,   telephone: true  },
+			alien:     { pitch: 4,   reverb: 0.5,  distortion: 0,    robot: 0.4, telephone: false }
+		};
+
+		let ctx, graph, params = { pitch: 0, reverb: 0, distortion: 0, robot: 0, telephone: false };
+		const $ = (id) => document.getElementById(id);
+
+		function apply() {
+			graph.setPitch(params.pitch);
+			graph.setReverb(params.reverb);
+			graph.setDistortion(params.distortion);
+			graph.setRobot(params.robot);
+			graph.setTelephone(params.telephone);
+		}
+		function sync() {
+			$('pitch').value = params.pitch; $('pitch-v').textContent = (params.pitch > 0 ? '+' : '') + params.pitch;
+			$('reverb').value = Math.round(params.reverb * 100); $('reverb-v').textContent = Math.round(params.reverb * 100) + '%';
+			$('distortion').value = Math.round(params.distortion * 100); $('distortion-v').textContent = Math.round(params.distortion * 100) + '%';
+			$('robot').value = Math.round(params.robot * 100); $('robot-v').textContent = Math.round(params.robot * 100) + '%';
+			const t = $('telephone'); t.textContent = params.telephone ? 'on' : 'off'; t.classList.toggle('on', params.telephone);
+		}
+
+		$('start').addEventListener('click', async () => {
+			try {
+				const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+				ctx = new (window.AudioContext || window.webkitAudioContext)();
+				await ctx.resume();
+				graph = window.HardChatsAudioFX.buildVoiceGraph(ctx);
+				const src = ctx.createMediaStreamSource(stream);
+				src.connect(graph.input);
+				graph.output.connect(ctx.destination); // loopback so you can hear it
+				apply(); sync();
+				$('status').textContent = 'running - speak (with headphones!)';
+				$('controls').style.display = 'block';
+				$('start').disabled = true;
+			} catch (e) {
+				$('status').textContent = 'mic error: ' + (e && e.message);
+			}
+		});
+
+		document.querySelectorAll('.presets button').forEach(b => b.addEventListener('click', () => {
+			Object.assign(params, PRESETS[b.dataset.preset]); apply(); sync();
+		}));
+		$('pitch').addEventListener('input', e => { params.pitch = Number(e.target.value); apply(); sync(); });
+		$('reverb').addEventListener('input', e => { params.reverb = Number(e.target.value) / 100; apply(); sync(); });
+		$('distortion').addEventListener('input', e => { params.distortion = Number(e.target.value) / 100; apply(); sync(); });
+		$('robot').addEventListener('input', e => { params.robot = Number(e.target.value) / 100; apply(); sync(); });
+		$('telephone').addEventListener('click', () => { params.telephone = !params.telephone; apply(); sync(); });
+	</script>
+</body>
+</html>

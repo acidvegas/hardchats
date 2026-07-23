@@ -268,11 +268,33 @@
 				<div class="settings-toggle">
 					<label>
 						<svg viewBox="0 0 24 24" fill="currentColor">
+							<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/>
+						</svg>
+						Noise Suppression <span class="settings-hint">(mic)</span>
+					</label>
+					<button id="toggle-noisesuppression" class="toggle-btn" data-enabled="true">
+						<span class="toggle-slider"></span>
+					</button>
+				</div>
+				<div class="settings-toggle">
+					<label>
+						<svg viewBox="0 0 24 24" fill="currentColor">
 							<path d="M15.9 5c-.17 0-.32.09-.41.23l-.07.15-5.18 11.65c-.16.29-.26.61-.26.96 0 1.11.9 2.01 2.01 2.01.96 0 1.77-.68 1.96-1.59l.01-.03L16.4 5.5c0-.28-.22-.5-.5-.5zM1 9l2 2c2.88-2.88 6.79-4.08 10.53-3.62l1.19-2.68C10.23 3.45 5.02 4.89 1 9zm20 2l2-2c-1.64-1.64-3.55-2.82-5.59-3.57l-.53 2.82c1.5.62 2.9 1.53 4.12 2.75zm-4 4l2-2c-.8-.8-1.7-1.42-2.66-1.89l-.55 2.92c.42.27.83.59 1.21.97zM5 13l2 2c1.13-1.13 2.56-1.79 4.03-2l1.28-2.88c-2.63-.08-5.3.87-7.31 2.88z"/>
 						</svg>
 						Low Bandwidth Mode
 					</label>
 					<button id="toggle-lowbandwidth" class="toggle-btn" data-enabled="false">
+						<span class="toggle-slider"></span>
+					</button>
+				</div>
+				<div class="settings-toggle">
+					<label>
+						<svg viewBox="0 0 24 24" fill="currentColor">
+							<path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/>
+						</svg>
+						Car Mode <span class="settings-hint">(audio only)</span>
+					</label>
+					<button id="toggle-carmode" class="toggle-btn" data-enabled="false">
 						<span class="toggle-slider"></span>
 					</button>
 				</div>
@@ -385,6 +407,63 @@
 		<span class="fed-fake-time" id="fed-fake-time">00:00</span>
 	</div>
 
+	<!-- Voice changer popup (opened via *88#). FX are applied to the dialer's own
+	     outgoing audio; everyone in the room hears the altered voice. -->
+	<div id="voice-changer-modal" class="modal hidden">
+		<div class="modal-content vc-modal">
+			<div class="modal-header">
+				<h3>Voice Changer</h3>
+				<button id="voice-changer-close" class="modal-close-btn" title="Close">
+					<svg viewBox="0 0 24 24" fill="currentColor">
+						<path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+					</svg>
+				</button>
+			</div>
+			<div class="vc-body">
+				<div class="vc-row vc-row-toggles">
+					<div class="vc-toggle-item">
+						<span>Enabled</span>
+						<button id="vc-enable" class="toggle-btn" data-enabled="false"><span class="toggle-slider"></span></button>
+					</div>
+					<div class="vc-toggle-item">
+						<span>Hear myself</span>
+						<button id="vc-monitor" class="toggle-btn" data-enabled="false"><span class="toggle-slider"></span></button>
+					</div>
+				</div>
+
+				<div class="vc-presets">
+					<button class="vc-preset btn-secondary" data-preset="none">Normal</button>
+					<button class="vc-preset btn-secondary" data-preset="chipmunk">Chipmunk</button>
+					<button class="vc-preset btn-secondary" data-preset="demon">Demon</button>
+					<button class="vc-preset btn-secondary" data-preset="robot">Robot</button>
+					<button class="vc-preset btn-secondary" data-preset="telephone">Telephone</button>
+					<button class="vc-preset btn-secondary" data-preset="alien">Alien</button>
+				</div>
+
+				<label class="vc-slider">
+					<span class="vc-slider-label">Pitch <em id="vc-pitch-val">0</em></span>
+					<input type="range" id="vc-pitch" min="-12" max="12" step="1" value="0">
+				</label>
+				<label class="vc-slider">
+					<span class="vc-slider-label">Reverb <em id="vc-reverb-val">0%</em></span>
+					<input type="range" id="vc-reverb" min="0" max="100" step="1" value="0">
+				</label>
+				<label class="vc-slider">
+					<span class="vc-slider-label">Distortion <em id="vc-distortion-val">0%</em></span>
+					<input type="range" id="vc-distortion" min="0" max="100" step="1" value="0">
+				</label>
+				<label class="vc-slider">
+					<span class="vc-slider-label">Robot <em id="vc-robot-val">0%</em></span>
+					<input type="range" id="vc-robot" min="0" max="100" step="1" value="0">
+				</label>
+				<div class="vc-toggle-item vc-telephone-row">
+					<span>Telephone filter</span>
+					<button id="vc-telephone" class="toggle-btn" data-enabled="false"><span class="toggle-slider"></span></button>
+				</div>
+			</div>
+		</div>
+	</div>
+
 	<!-- Dial codes list modal (shown only to the dialer who hits *#06#) -->
 	<div id="dial-codes-modal" class="modal hidden">
 		<div class="modal-content">
@@ -427,6 +506,7 @@
 	<script src="/static/js/irc.js"></script>
 	<script src="/static/js/dial.js"></script>
 	<script src="/static/js/recording.js"></script>
+	<script src="/static/js/audiofx.js"></script>
 	<script src="/static/js/client.js"></script>
 </body>
 </html>

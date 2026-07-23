@@ -382,6 +382,13 @@ async function createPeerConnection(peerId, username, initiator) {
 			// Reset ICE restart counter on successful connection
 			if (state.peers[peerId]) state.peers[peerId].iceRestartCount = 0;
 			startNetworkMonitoring(peerId);
+			// (Re)apply outgoing shaping now that this peer's senders exist and
+			// setParameters will succeed. Covers newly-joined peers: low-bandwidth video
+			// cap, car-mode video pausing (if this peer is audio-only), and our own
+			// car-mode audio bitrate cap.
+			if (typeof applyVideoBitrateCap === 'function') applyVideoBitrateCap();
+			if (typeof applyAudioOnlyGatingForPeer === 'function') applyAudioOnlyGatingForPeer(peerId);
+			if (typeof applyCarModeAudioBitrate === 'function') applyCarModeAudioBitrate();
 			updateUI();
 
 		} else if (pc.connectionState === 'failed') {

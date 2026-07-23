@@ -49,6 +49,13 @@ const state = {
 		notifications: true,
 		sounds: true,
 		lowBandwidth: false,
+		// Browser-native mic noise suppression + echo cancel + auto-gain. Applied as
+		// getUserMedia constraints and live via track.applyConstraints when toggled.
+		noiseSuppression: true,
+		// Car mode: audio-only. Hides all video/screen locally, tells peers to stop
+		// sending us video, suppresses visual dial effects + their sounds, and drops
+		// our outgoing audio to a low bitrate. For driving / very constrained links.
+		carMode: false,
 		// Mobile audio routing. true = remote audio plays through a hidden <video>
 		// element, which iOS classifies as media playback (loudspeaker). false = plays
 		// through <audio>, which under an active mic becomes communication category

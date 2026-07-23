@@ -301,7 +301,7 @@ async function applySettings() {
 	if (newMicId && newMicId !== selectedMicId) {
 		try {
 			const newAudioStream = await navigator.mediaDevices.getUserMedia({
-				audio: { deviceId: { exact: newMicId } }
+				audio: getAudioConstraints(newMicId, 'exact')
 			});
 			const newAudioTrack = newAudioStream.getAudioTracks()[0];
 
@@ -328,6 +328,12 @@ async function applySettings() {
 			// disconnects the old source itself; we never close the shared AudioContext
 			// (it's reused across peers and across mic switches).
 			setupLocalAudioAnalyser();
+
+			// If the voice-changer graph is active, rebuild its source onto the new mic
+			// track, then push the correct outgoing track (processed or raw) to every
+			// sender via the normal gating path. No-op when the graph is inactive.
+			if (typeof rebuildVoiceFxSource === 'function') rebuildVoiceFxSource();
+			if (typeof applyBreakoutGatingAll === 'function') applyBreakoutGatingAll();
 
 			console.log('[Settings] Microphone switched');
 		} catch (e) {
@@ -378,6 +384,9 @@ async function applySettings() {
 					send({ type: 'camera_status', enabled: true });
 					$('cam-btn').classList.add('active');
 				}
+
+				applyVideoBitrateCap();
+				if (typeof applyAudioOnlyGatingAll === 'function') applyAudioOnlyGatingAll();
 
 				console.log('[Settings] Camera switched');
 			} catch (e) {
@@ -436,6 +445,12 @@ function updateSettingsToggles() {
 	if (soundToggle) soundToggle.dataset.enabled = state.settings.sounds;
 	if (lowBwToggle) lowBwToggle.dataset.enabled = state.settings.lowBandwidth;
 	if (speakerToggle) speakerToggle.dataset.enabled = state.settings.speakerMode !== false;
+
+	const nsToggle = $('toggle-noisesuppression');
+	if (nsToggle) nsToggle.dataset.enabled = state.settings.noiseSuppression !== false;
+
+	const carToggle = $('toggle-carmode');
+	if (carToggle) carToggle.dataset.enabled = !!state.settings.carMode;
 }
 
 // Toggle button click handler
@@ -460,19 +475,75 @@ function handleToggleClick(toggleId, settingKey) {
 	saveSettings();
 }
 
-// Get video constraints based on low bandwidth mode
+// Build getUserMedia audio constraints: optional mic device + noise-suppression flags.
+// mode 'ideal' for initial capture (soft preference), 'exact' for explicit device switches.
+function getAudioConstraints(deviceId, mode) {
+	const ns = state.settings.noiseSuppression !== false;
+	const c = { echoCancellation: ns, noiseSuppression: ns, autoGainControl: ns };
+	if (deviceId) c.deviceId = (mode === 'exact') ? { exact: deviceId } : { ideal: deviceId };
+	return c;
+}
+
+// Apply the current noise-suppression setting to the live mic track without re-acquiring
+// it. Works whether or not the voice-changer graph is active, since the constraint lives
+// on the raw mic track that feeds the graph.
+function applyNoiseSuppression() {
+	const track = state.localStream?.getAudioTracks()[0];
+	if (!track) return;
+	const ns = state.settings.noiseSuppression !== false;
+	track.applyConstraints({ echoCancellation: ns, noiseSuppression: ns, autoGainControl: ns })
+		.then(() => console.log('[Audio] Noise suppression', ns ? 'on' : 'off'))
+		.catch(e => console.warn('[Audio] applyConstraints failed:', e?.message || e));
+}
+
+// Get video constraints based on low bandwidth mode. Low mode hard-caps resolution and
+// framerate (max, not just ideal) so the encoder can't drift back up on a good moment.
 function getVideoConstraints() {
 	if (state.settings.lowBandwidth) {
 		return {
-			width: { ideal: 640 },
-			height: { ideal: 360 },
-			frameRate: { ideal: 15, max: 15 }
+			width:     { ideal: 640, max: 640 },
+			height:    { ideal: 360, max: 360 },
+			frameRate: { ideal: 15,  max: 15 }
 		};
 	}
 	return {
 		width: { ideal: 1280 },
 		height: { ideal: 720 }
 	};
+}
+
+// Low-bandwidth outgoing CAMERA bitrate ceiling (bits/sec). Screen share is left uncapped
+// so shared text stays legible.
+const LOWBW_VIDEO_BITRATE = 300000;
+
+// Cap (or uncap) the outgoing camera bitrate on every peer's video sender. setParameters
+// is transparent (no renegotiation) and safe to call repeatedly; screen-share senders
+// (peer.screenSender) are skipped. Called on toggle and whenever a camera sender is
+// (re)created or a peer connects.
+function applyVideoBitrateCap() {
+	const cap = state.settings.lowBandwidth ? LOWBW_VIDEO_BITRATE : undefined;
+	Object.values(state.peers).forEach(peer => {
+		if (!peer.pc) return;
+		peer.pc.getSenders().forEach(sender => {
+			if (!sender.track || sender.track.kind !== 'video') return;
+			if (peer.screenSender && sender === peer.screenSender) return;
+			const params = sender.getParameters();
+			if (!params.encodings || !params.encodings.length) params.encodings = [{}];
+			params.encodings[0].maxBitrate = cap;
+			sender.setParameters(params).catch(e => console.warn('[LowBW] setParameters failed:', e?.message || e));
+		});
+	});
+}
+
+// Apply low-bandwidth mode to live video: shrink the current camera track in place (no
+// renegotiation) and (re)apply the outgoing bitrate ceiling.
+function applyLowBandwidth() {
+	const videoTrack = state.localStream?.getVideoTracks()[0];
+	if (videoTrack) {
+		videoTrack.applyConstraints(getVideoConstraints())
+			.catch(e => console.warn('[LowBW] applyConstraints failed:', e?.message || e));
+	}
+	applyVideoBitrateCap();
 }
 
 // Settings modal event listeners
@@ -483,7 +554,18 @@ document.addEventListener('DOMContentLoaded', () => {
 	// Toggle button listeners
 	$('toggle-notifications')?.addEventListener('click', () => handleToggleClick('toggle-notifications', 'notifications'));
 	$('toggle-sounds')?.addEventListener('click', () => handleToggleClick('toggle-sounds', 'sounds'));
-	$('toggle-lowbandwidth')?.addEventListener('click', () => handleToggleClick('toggle-lowbandwidth', 'lowBandwidth'));
+	$('toggle-lowbandwidth')?.addEventListener('click', () => {
+		handleToggleClick('toggle-lowbandwidth', 'lowBandwidth');
+		applyLowBandwidth();
+	});
+	$('toggle-carmode')?.addEventListener('click', () => {
+		handleToggleClick('toggle-carmode', 'carMode');
+		if (typeof applyCarMode === 'function') applyCarMode();
+	});
+	$('toggle-noisesuppression')?.addEventListener('click', () => {
+		handleToggleClick('toggle-noisesuppression', 'noiseSuppression');
+		applyNoiseSuppression();
+	});
 	$('toggle-speakermode')?.addEventListener('click', () => {
 		handleToggleClick('toggle-speakermode', 'speakerMode');
 		if (typeof rebuildAudioSinksForSpeakerMode === 'function') rebuildAudioSinksForSpeakerMode();

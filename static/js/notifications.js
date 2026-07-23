@@ -83,7 +83,8 @@ function getSoundContext() {
 const SOUND_FILES = {
 	join:  '/static/sounds/gta.wav',
 	leave: '/static/sounds/htp.wav',
-	knock: '/static/sounds/knock.mp3'
+	knock: '/static/sounds/knock.mp3',
+	laugh: '/static/sounds/laugh.mp3'
 };
 const soundElements = {};
 

@@ -56,6 +56,11 @@ async function toggleCam() {
 			state.users['local'].camOn = true;
 			send({ type: 'camera_status', enabled: true });
 
+			// Apply the low-bandwidth outgoing bitrate ceiling to the fresh video senders,
+			// and pause them for any peer that's in car mode (audio-only).
+			if (typeof applyVideoBitrateCap === 'function') applyVideoBitrateCap();
+			if (typeof applyAudioOnlyGatingAll === 'function') applyAudioOnlyGatingAll();
+
 		} catch (err) {
 			console.error('Camera error:', err);
 			alert('Could not access camera: ' + err.message);
@@ -141,6 +146,9 @@ async function toggleScreen() {
 			state.screenEnabled = true;
 			state.users['local'].screenOn = true;
 			send({ type: 'screen_status', enabled: true });
+
+			// Pause the fresh screen senders for any peer in car mode (audio-only).
+			if (typeof applyAudioOnlyGatingAll === 'function') applyAudioOnlyGatingAll();
 
 		} catch (err) {
 			console.error('Screen share error:', err);

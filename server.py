@@ -39,6 +39,8 @@ DIAL_CODES = {
 	'*420#':  'trippy_toggle',       # toggles UI trippy mode globally for everyone
 	'*1337#': 'rainbow_nick_toggle', # toggles the dialer's own rainbow nick
 	'*101#':  'knock',               # plays a knock sound for everyone in the room
+	'*300#':  'laugh',               # plays a laugh sound for everyone in the room
+	'*88#':   'voice_changer',       # opens the dialer's voice changer popup (local FX)
 	'*666#':  'schizo_toggle',       # toggles schizo mode (subtle UI shake/wiggle/morph)
 	'*9059#': 'pong_toggle',         # toggles pong mode (webcam tiles bounce around)
 	'*401#':  'ghost_toggle',        # hides the dialer's nick from everyone's user list
@@ -54,6 +56,8 @@ DIAL_CODE_DESCRIPTIONS = [
 	('*420#',  'Toggle trippy color mode (everyone)'),
 	('*1337#', 'Toggle rainbow nickname (just you)'),
 	('*101#',  'Play a knock sound (everyone)'),
+	('*300#',  'Play a laugh sound (everyone)'),
+	('*88#',   'Open the voice changer (just you)'),
 	('*666#',  'Toggle schizo mode (everyone)'),
 	('*9059#', 'Toggle pong mode (everyone)'),
 	('*401#',  'Toggle ghost mode (hide your nick)'),
@@ -239,7 +243,7 @@ async def websocket_handler(request: web.Request) -> web.WebSocketResponse:
 	await ws.prepare(request)
 
 	client_id = str(uuid.uuid4())[:8]
-	clients[client_id] = {'ws': ws, 'username': None, 'cam_on': False, 'mic_on': True, 'screen_on': False, 'rainbow_nick': False, 'ghost': False, 'fed': False, 'breakout': False}
+	clients[client_id] = {'ws': ws, 'username': None, 'cam_on': False, 'mic_on': True, 'screen_on': False, 'rainbow_nick': False, 'ghost': False, 'fed': False, 'breakout': False, 'audio_only': False}
 
 	logging.info(f'[{client_id}] Connected')
 
@@ -302,7 +306,7 @@ async def handle_message(client_id: str, data: dict):
 		reconnect_tokens[reconnect_token] = {'username': username, 'expires': time.time() + 3600}
 
 		users = [
-			{'id': cid, 'username': c['username'], 'cam_on': c.get('cam_on', False), 'mic_on': c.get('mic_on', True), 'screen_on': c.get('screen_on', False), 'rainbow_nick': c.get('rainbow_nick', False), 'ghost': c.get('ghost', False), 'fed': c.get('fed', False), 'breakout': c.get('breakout', False)}
+			{'id': cid, 'username': c['username'], 'cam_on': c.get('cam_on', False), 'mic_on': c.get('mic_on', True), 'screen_on': c.get('screen_on', False), 'rainbow_nick': c.get('rainbow_nick', False), 'ghost': c.get('ghost', False), 'fed': c.get('fed', False), 'breakout': c.get('breakout', False), 'audio_only': c.get('audio_only', False)}
 			for cid, c in clients.items()
 			if c['username'] and cid != client_id
 		]
@@ -368,7 +372,7 @@ async def handle_message(client_id: str, data: dict):
 		reconnect_tokens[new_token] = {'username': username, 'expires': time.time() + 3600}
 
 		users = [
-			{'id': cid, 'username': c['username'], 'cam_on': c.get('cam_on', False), 'mic_on': c.get('mic_on', True), 'screen_on': c.get('screen_on', False), 'rainbow_nick': c.get('rainbow_nick', False), 'ghost': c.get('ghost', False), 'fed': c.get('fed', False), 'breakout': c.get('breakout', False)}
+			{'id': cid, 'username': c['username'], 'cam_on': c.get('cam_on', False), 'mic_on': c.get('mic_on', True), 'screen_on': c.get('screen_on', False), 'rainbow_nick': c.get('rainbow_nick', False), 'ghost': c.get('ghost', False), 'fed': c.get('fed', False), 'breakout': c.get('breakout', False), 'audio_only': c.get('audio_only', False)}
 			for cid, c in clients.items()
 			if c['username'] and cid != client_id
 		]
@@ -448,6 +452,19 @@ async def handle_message(client_id: str, data: dict):
 			'enabled' : enabled
 		})
 
+	elif msg_type == 'car_mode':
+		# Car mode = audio-only. We track the flag and fan it out so every other client
+		# pauses the video/screen streams they send to this user (client-side, via
+		# RTCRtpSender encodings.active). Server just relays state.
+		enabled = bool(data.get('enabled', False))
+		clients[client_id]['audio_only'] = enabled
+		logging.info(f'[{client_id}] Car mode -> {enabled}')
+		await broadcast_all({
+			'type'       : 'car_mode_status',
+			'id'         : client_id,
+			'audio_only' : enabled
+		})
+
 	elif msg_type == 'leave':
 		# Explicit leave message for immediate cleanup (triggered on tab close)
 		await cleanup(client_id)
@@ -493,6 +510,14 @@ async def handle_message(client_id: str, data: dict):
 		elif action == 'knock':
 			logging.info(f'[{client_id}] Knock')
 			await broadcast_all({'type': 'play_sound', 'sound': 'knock'})
+		elif action == 'laugh':
+			logging.info(f'[{client_id}] Laugh')
+			await broadcast_all({'type': 'play_sound', 'sound': 'laugh'})
+		elif action == 'voice_changer':
+			# Private trigger - only the dialer's UI opens the voice changer popup. The FX
+			# are applied client-side to the dialer's own outgoing audio.
+			logging.info(f'[{client_id}] Voice changer open')
+			await clients[client_id]['ws'].send_json({'type': 'voice_changer_open'})
 		elif action == 'schizo_toggle':
 			schizo_mode = not schizo_mode
 			logging.info(f'[{client_id}] Schizo mode -> {schizo_mode}')
@@ -510,7 +535,6 @@ async def handle_message(client_id: str, data: dict):
 			for c in clients.values():
 				c['rainbow_nick'] = False
 				c['ghost']        = False
-				c['breakout']     = False
 			logging.info(f'[{client_id}] Reset all modes')
 			await broadcast_all({'type': 'reset_all'})
 		elif action == 'breakout_toggle':

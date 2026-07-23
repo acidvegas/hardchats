@@ -23,6 +23,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 	$('username').addEventListener('keypress', (e) => e.key === 'Enter' && $('captcha-answer').focus());
 	$('captcha-answer').addEventListener('keypress', (e) => e.key === 'Enter' && connect());
 	$('refresh-captcha').addEventListener('click', loadCaptcha);
+	if (typeof initVoiceChangerListeners === 'function') initVoiceChangerListeners();
 	$('mic-btn').addEventListener('click', toggleMic);
 	$('cam-btn').addEventListener('click', toggleCam);
 	$('screen-btn').addEventListener('click', toggleScreen);
@@ -223,9 +224,7 @@ async function connect() {
 	try {
 		// Check for saved device preferences
 		const savedDevices = loadSavedDevices();
-		const audioConstraints = savedDevices?.micId
-			? { deviceId: { ideal: savedDevices.micId } }
-			: true;
+		const audioConstraints = getAudioConstraints(savedDevices?.micId, 'ideal');
 
 		state.localStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints, video: false });
 
@@ -375,12 +374,17 @@ function handleSignal(data) {
 					ghost: !!user.ghost,
 					fed: !!user.fed,
 					breakout: !!user.breakout,
+					audioOnly: !!user.audio_only,
 					speaking: false
 				};
 				createPeerConnection(user.id, user.username, true);
 			});
 
 			updateUI();
+
+			// If we joined with car mode on (persisted setting), tell peers to stop
+			// sending us video and apply our local audio-only shaping.
+			if (state.settings.carMode && typeof applyCarMode === 'function') applyCarMode();
 			if (!state.timerStarted) {
 				startTimer();
 				state.timerStarted = true;
@@ -522,6 +526,8 @@ function handleSignal(data) {
 			break;
 
 		case 'play_sound':
+			// Car mode silences dial-code sound effects (knock/laugh).
+			if (state.settings.carMode) break;
 			playSound(data.sound);
 			break;
 
@@ -533,9 +539,7 @@ function handleSignal(data) {
 				if (!u) return;
 				u.rainbowNick = false;
 				u.ghost = false;
-				u.breakout = false;
 			});
-			applyBreakoutGatingAll();
 			updateUsersList();
 			break;
 
@@ -547,12 +551,24 @@ function handleSignal(data) {
 			openRecordModal();
 			break;
 
+		case 'voice_changer_open':
+			openVoiceChanger();
+			break;
+
 		case 'request_broadcast_recording':
 			uploadRecording();
 			break;
 
 		case 'play_recording':
+			// Car mode silences broadcast recordings too.
+			if (state.settings.carMode) break;
 			playBroadcastRecording(data.audio, data.mime);
+			break;
+
+		case 'car_mode_status':
+			if (state.users[data.id]) state.users[data.id].audioOnly = !!data.audio_only;
+			// Stop / resume the video+screen we send to this peer.
+			applyAudioOnlyGatingForPeer(data.id);
 			break;
 
 		case 'fed_status':
@@ -633,7 +649,11 @@ function applyBreakoutGatingForPeer(peerId) {
 	// sender's track for null so they receive silence. track.enabled would mute the
 	// mic for every peer because the underlying MediaStreamTrack is shared. This
 	// way the regular mic on/off (toggleMic) still works for matching peers.
-	const localAudioTrack = state.localStream?.getAudioTracks()[0] || null;
+	// getOutgoingAudioTrack() (audiofx.js) returns the voice-changer's processed track
+	// when active, else the raw mic - so it's the single source of truth for what we send.
+	const localAudioTrack = (typeof getOutgoingAudioTrack === 'function')
+		? getOutgoingAudioTrack()
+		: (state.localStream?.getAudioTracks()[0] || null);
 	const targetTrack = canHear ? localAudioTrack : null;
 	if (peer.audioSender) {
 		// replaceTrack is transparent (no renegotiation needed). Avoid redundant calls.
@@ -650,6 +670,60 @@ function applyBreakoutGatingForPeer(peerId) {
 	}
 
 	peer.breakoutMuted = !canHear;
+}
+
+// ========== CAR MODE (audio-only) ==========
+//
+// Applied from the settings toggle (and re-applied on join if persisted on). Three parts:
+//  1. We broadcast car_mode so every OTHER client pauses the video/screen they send us.
+//  2. Locally we hide all video (updateVideoGrid short-circuits on state.settings.carMode)
+//     and suppress visual dial effects + their sounds.
+//  3. We cap our own outgoing audio bitrate low.
+// Pausing peers' outbound video to us is done via RTCRtpSender encodings.active=false
+// (setParameters) - transparent, no renegotiation, and it never touches the track so it
+// can't collide with the camera on/off pipeline.
+
+const CARMODE_AUDIO_BITRATE = 24000; // ~24 kbps opus - plenty for intelligible speech
+
+function applyCarMode() {
+	const on = !!state.settings.carMode;
+	send({ type: 'car_mode', enabled: on });
+	// Re-render dial effects against the new car-mode value (setters gate on it).
+	if (typeof setTrippyMode === 'function') setTrippyMode(state.trippyMode);
+	if (typeof setSchizoMode === 'function') setSchizoMode(state.schizoMode);
+	if (typeof setPongMode === 'function') setPongMode(state.pongMode);
+	applyCarModeAudioBitrate();
+	updateUI();
+}
+
+// Cap (or uncap) our outgoing audio bitrate on every peer when we're in car mode.
+function applyCarModeAudioBitrate() {
+	const cap = state.settings.carMode ? CARMODE_AUDIO_BITRATE : undefined;
+	Object.values(state.peers).forEach(peer => {
+		if (!peer.audioSender) return;
+		const params = peer.audioSender.getParameters();
+		if (!params.encodings || !params.encodings.length) params.encodings = [{}];
+		params.encodings[0].maxBitrate = cap;
+		peer.audioSender.setParameters(params).catch(e => console.warn('[CarMode] audio setParameters failed:', e?.message || e));
+	});
+}
+
+// Pause/resume the video+screen RTP we send to a peer based on THEIR car-mode flag.
+function applyAudioOnlyGatingForPeer(peerId) {
+	const peer = state.peers[peerId];
+	if (!peer || !peer.pc) return;
+	const peerAudioOnly = !!state.users[peerId]?.audioOnly;
+	peer.pc.getSenders().forEach(sender => {
+		if (!sender.track || sender.track.kind !== 'video') return;
+		const params = sender.getParameters();
+		if (!params.encodings || !params.encodings.length) params.encodings = [{}];
+		params.encodings[0].active = !peerAudioOnly;
+		sender.setParameters(params).catch(e => console.warn('[CarMode] video gate failed:', e?.message || e));
+	});
+}
+
+function applyAudioOnlyGatingAll() {
+	Object.keys(state.peers).forEach(applyAudioOnlyGatingForPeer);
 }
 
 // ========== TIMER ==========
