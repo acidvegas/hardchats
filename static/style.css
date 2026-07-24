@@ -1501,6 +1501,18 @@ body {
 /* Flip-camera button reads as an enabled action (brighter than the default grey icon). */
 #flip-cam-btn { color: var(--text-primary); }
 
+/* Soundboard popup (*111#) */
+.sound-menu-grid {
+	display: grid;
+	grid-template-columns: repeat(2, 1fr);
+	gap: 0.6rem;
+	padding: 1rem 0 0.25rem;
+}
+.sound-menu-grid .sound-btn {
+	padding: 0.85rem 0.5rem;
+	font-size: 0.95rem;
+}
+
 @media (max-width: 480px) {
 	.video-tile { border-radius: 8px; }
 	.video-tile .username { font-size: 0.75rem; padding: 0.5rem 0.75rem; }

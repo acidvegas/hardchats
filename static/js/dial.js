@@ -20,6 +20,15 @@ function initDialListeners() {
 		if (e.target.id === 'dial-codes-modal') closeDialCodes();
 	});
 
+	// Soundboard popup (*111#). Buttons stay live so you can fire several sounds.
+	$('sound-menu-close')?.addEventListener('click', closeSoundMenu);
+	$('sound-menu-modal')?.addEventListener('click', (e) => {
+		if (e.target.id === 'sound-menu-modal') closeSoundMenu();
+	});
+	document.querySelectorAll('.sound-btn').forEach(btn => {
+		btn.addEventListener('click', () => send({ type: 'play_soundboard', sound: btn.dataset.sound }));
+	});
+
 	document.querySelectorAll('.dial-key').forEach(btn => {
 		btn.addEventListener('click', () => pressDialKey(btn.dataset.key));
 	});
@@ -86,6 +95,15 @@ function showDialCodes(codes) {
 
 function closeDialCodes() {
 	$('dial-codes-modal')?.classList.add('hidden');
+}
+
+// Soundboard popup, opened server-side when the dialer hits *111#.
+function openSoundMenu() {
+	$('sound-menu-modal')?.classList.remove('hidden');
+}
+
+function closeSoundMenu() {
+	$('sound-menu-modal')?.classList.add('hidden');
 }
 
 // Apply or remove the trippy-mode class on <body>. Server tells us when to flip via

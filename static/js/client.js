@@ -422,11 +422,13 @@ function handleSignal(data) {
 			console.log('[Signal] user_joined:', data.id, 'micOn:', data.mic_on, 'state:', state.users[data.id]);
 			updateUI();
 
-			// Notification and sound. 1-in-10 joins (rolled server-side) play a random
-			// Seinfeld slice instead of the normal join sound.
+			// Notification and sound. The server may roll a random join-sound easter egg
+			// (Seinfeld slice or NFL); otherwise the normal join sound plays.
 			showNotification('HardChats', `${data.username} joined the room`, 'user-join');
-			if (data.join_seinfeld) {
-				playSoundClip('seinfeld', data.join_seinfeld.start, data.join_seinfeld.duration);
+			if (data.join_sound && data.join_sound.kind === 'clip') {
+				playSoundClip(data.join_sound.sound, data.join_sound.start, data.join_sound.duration);
+			} else if (data.join_sound && data.join_sound.kind === 'sound') {
+				playSound(data.join_sound.sound);
 			} else {
 				playSound('join');
 			}
@@ -565,6 +567,10 @@ function handleSignal(data) {
 
 		case 'voice_changer_open':
 			openVoiceChanger();
+			break;
+
+		case 'sound_menu_open':
+			openSoundMenu();
 			break;
 
 		case 'request_broadcast_recording':

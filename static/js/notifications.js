@@ -85,7 +85,12 @@ const SOUND_FILES = {
 	leave: '/static/sounds/htp.wav',
 	knock: '/static/sounds/knock.mp3',
 	laugh: '/static/sounds/laugh.mp3',
-	seinfeld: '/static/sounds/seinfeld.mp3'
+	seinfeld: '/static/sounds/seinfeld.mp3',
+	nfl: '/static/sounds/nfl.mp3',
+	crickets: '/static/sounds/crickets.mp3',
+	suspend: '/static/sounds/suspend.mp3',
+	grinder: '/static/sounds/grinder.mp3',
+	iphone: '/static/sounds/iphone.mp3'
 };
 const soundElements = {};
 

@@ -469,6 +469,30 @@
 		</div>
 	</div>
 
+	<!-- Soundboard popup (opened via *111#). Picking a sound plays it for everyone. -->
+	<div id="sound-menu-modal" class="modal hidden">
+		<div class="modal-content">
+			<div class="modal-header">
+				<h3>Soundboard</h3>
+				<button id="sound-menu-close" class="modal-close-btn" title="Close">
+					<svg viewBox="0 0 24 24" fill="currentColor">
+						<path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+					</svg>
+				</button>
+			</div>
+			<div class="sound-menu-grid">
+				<button class="sound-btn btn-secondary" data-sound="knock">Knock</button>
+				<button class="sound-btn btn-secondary" data-sound="laugh">Laugh</button>
+				<button class="sound-btn btn-secondary" data-sound="seinfeld">Seinfeld</button>
+				<button class="sound-btn btn-secondary" data-sound="nfl">NFL</button>
+				<button class="sound-btn btn-secondary" data-sound="crickets">Crickets</button>
+				<button class="sound-btn btn-secondary" data-sound="suspend">Suspense</button>
+				<button class="sound-btn btn-secondary" data-sound="grinder">Grinder</button>
+				<button class="sound-btn btn-secondary" data-sound="iphone">iPhone</button>
+			</div>
+		</div>
+	</div>
+
 	<!-- Dial codes list modal (shown only to the dialer who hits *#06#) -->
 	<div id="dial-codes-modal" class="modal hidden">
 		<div class="modal-content">
