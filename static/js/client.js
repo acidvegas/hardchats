@@ -422,9 +422,14 @@ function handleSignal(data) {
 			console.log('[Signal] user_joined:', data.id, 'micOn:', data.mic_on, 'state:', state.users[data.id]);
 			updateUI();
 
-			// Notification and sound
+			// Notification and sound. 1-in-10 joins (rolled server-side) play a random
+			// Seinfeld slice instead of the normal join sound.
 			showNotification('HardChats', `${data.username} joined the room`, 'user-join');
-			playSound('join');
+			if (data.join_seinfeld) {
+				playSoundClip('seinfeld', data.join_seinfeld.start, data.join_seinfeld.duration);
+			} else {
+				playSound('join');
+			}
 			break;
 
 		case 'user_left':

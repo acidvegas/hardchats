@@ -58,7 +58,7 @@ DIAL_CODE_DESCRIPTIONS = [
 	('*1337#', 'Toggle rainbow nickname (just you)'),
 	('*101#',  'Play a knock sound (everyone)'),
 	('*300#',  'Play a laugh sound (everyone)'),
-	('*212#',  'Play a random 10s of the Seinfeld bass (everyone)'),
+	('*212#',  'Play a random 3-5s of the Seinfeld bass (everyone)'),
 	('*88#',   'Open the voice changer (just you)'),
 	('*666#',  'Toggle schizo mode (everyone)'),
 	('*9059#', 'Toggle pong mode (everyone)'),
@@ -73,10 +73,20 @@ DIAL_CODE_DESCRIPTIONS = [
 MAX_RECORDING_BYTES = 512 * 1024  # ~500KB cap, plenty for 10s of opus at low bitrate
 DIAL_MAX_LEN = 32
 
-# Seinfeld bass riff (static/sounds/seinfeld.mp3). One random start offset is picked
-# server-side per *212# and broadcast so everyone hears the same slice.
-SEINFELD_TRACK_LEN = 54  # seconds (actual file is ~54.19s)
-SEINFELD_CLIP_LEN  = 10  # seconds
+# Seinfeld bass riff (static/sounds/seinfeld.mp3). A random slice is picked server-side
+# and broadcast so everyone hears the same clip.
+SEINFELD_TRACK_LEN   = 54    # seconds (actual file is ~54.19s)
+SEINFELD_CLIP_MIN    = 3     # *212# plays a random 3-5s slice
+SEINFELD_CLIP_MAX    = 5
+SEINFELD_JOIN_LEN    = 3     # join easter egg plays a 3s slice
+JOIN_SEINFELD_CHANCE = 0.10  # 1-in-10 joins get Seinfeld instead of the normal join sound
+
+
+def random_seinfeld(clip_len: float) -> dict:
+	'''Pick a random start for a Seinfeld slice of the given length.'''
+
+	start = round(random.uniform(0, SEINFELD_TRACK_LEN - clip_len), 2)
+	return {'start': start, 'duration': round(clip_len, 2)}
 
 
 def generate_captcha():
@@ -334,13 +344,19 @@ async def handle_message(client_id: str, data: dict):
 			'pong_mode'       : pong_mode
 		})
 
+		# 1-in-10 joins swap the normal join sound for a random 3s Seinfeld slice. Rolled
+		# once server-side so the whole room hears the same thing. Only on genuine joins,
+		# not reconnects (which are frequent on mobile).
+		join_seinfeld = random_seinfeld(SEINFELD_JOIN_LEN) if random.random() < JOIN_SEINFELD_CHANCE else None
+
 		await broadcast(client_id, {
-			'type'     : 'user_joined',
-			'id'       : client_id,
-			'username' : username,
-			'mic_on'   : clients[client_id].get('mic_on', True),
-			'cam_on'   : clients[client_id].get('cam_on', False),
-			'screen_on': clients[client_id].get('screen_on', False)
+			'type'         : 'user_joined',
+			'id'           : client_id,
+			'username'     : username,
+			'mic_on'       : clients[client_id].get('mic_on', True),
+			'cam_on'       : clients[client_id].get('cam_on', False),
+			'screen_on'    : clients[client_id].get('screen_on', False),
+			'join_seinfeld': join_seinfeld
 		})
 
 	elif msg_type == 'reconnect':
@@ -525,10 +541,10 @@ async def handle_message(client_id: str, data: dict):
 			logging.info(f'[{client_id}] Laugh')
 			await broadcast_all({'type': 'play_sound', 'sound': 'laugh'})
 		elif action == 'seinfeld':
-			# Pick one random start so the whole room hears the same 10-second slice.
-			start = round(random.uniform(0, SEINFELD_TRACK_LEN - SEINFELD_CLIP_LEN), 2)
-			logging.info(f'[{client_id}] Seinfeld clip @ {start}s')
-			await broadcast_all({'type': 'play_clip', 'sound': 'seinfeld', 'start': start, 'duration': SEINFELD_CLIP_LEN})
+			# Pick one random 3-5s slice so the whole room hears the same clip.
+			clip = random_seinfeld(random.uniform(SEINFELD_CLIP_MIN, SEINFELD_CLIP_MAX))
+			logging.info(f'[{client_id}] Seinfeld clip @ {clip["start"]}s for {clip["duration"]}s')
+			await broadcast_all({'type': 'play_clip', 'sound': 'seinfeld', **clip})
 		elif action == 'voice_changer':
 			# Private trigger - only the dialer's UI opens the voice changer popup. The FX
 			# are applied client-side to the dialer's own outgoing audio.
