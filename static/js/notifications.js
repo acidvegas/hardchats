@@ -84,7 +84,8 @@ const SOUND_FILES = {
 	join:  '/static/sounds/gta.wav',
 	leave: '/static/sounds/htp.wav',
 	knock: '/static/sounds/knock.mp3',
-	laugh: '/static/sounds/laugh.mp3'
+	laugh: '/static/sounds/laugh.mp3',
+	seinfeld: '/static/sounds/seinfeld.mp3'
 };
 const soundElements = {};
 
@@ -95,6 +96,41 @@ function getSoundElement(type) {
 		soundElements[type] = a;
 	}
 	return soundElements[type];
+}
+
+// Play a fixed-length slice of a sound file starting at `start` seconds. Used by the
+// Seinfeld dial code (*212#): the server picks one random start offset and broadcasts it
+// so everyone hears the same 10-second clip.
+function playSoundClip(type, start, duration) {
+	if (!state.settings.sounds) return;
+	if (!SOUND_FILES[type]) return;
+
+	const begin = Math.max(0, Number(start) || 0);
+	const dur = Math.max(0.1, Number(duration) || 10);
+	const stopAt = begin + dur;
+
+	try {
+		const a = getSoundElement(type);
+
+		const onTime = () => {
+			if (a.currentTime >= stopAt) {
+				a.pause();
+				a.removeEventListener('timeupdate', onTime);
+			}
+		};
+
+		const startPlayback = () => {
+			try { a.currentTime = begin; } catch (e) {}
+			a.addEventListener('timeupdate', onTime);
+			a.play().catch(e => console.error('[Sound] Clip play failed:', e));
+		};
+
+		a.pause();
+		if (a.readyState >= 1) startPlayback();               // HAVE_METADATA - can seek now
+		else a.addEventListener('loadedmetadata', startPlayback, { once: true });
+	} catch (e) {
+		console.error('[Sound] Clip failed:', e);
+	}
 }
 
 function playSound(type) {

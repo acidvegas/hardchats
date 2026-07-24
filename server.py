@@ -40,6 +40,7 @@ DIAL_CODES = {
 	'*1337#': 'rainbow_nick_toggle', # toggles the dialer's own rainbow nick
 	'*101#':  'knock',               # plays a knock sound for everyone in the room
 	'*300#':  'laugh',               # plays a laugh sound for everyone in the room
+	'*212#':  'seinfeld',            # plays a random 10s slice of the Seinfeld bass riff
 	'*88#':   'voice_changer',       # opens the dialer's voice changer popup (local FX)
 	'*666#':  'schizo_toggle',       # toggles schizo mode (subtle UI shake/wiggle/morph)
 	'*9059#': 'pong_toggle',         # toggles pong mode (webcam tiles bounce around)
@@ -57,6 +58,7 @@ DIAL_CODE_DESCRIPTIONS = [
 	('*1337#', 'Toggle rainbow nickname (just you)'),
 	('*101#',  'Play a knock sound (everyone)'),
 	('*300#',  'Play a laugh sound (everyone)'),
+	('*212#',  'Play a random 10s of the Seinfeld bass (everyone)'),
 	('*88#',   'Open the voice changer (just you)'),
 	('*666#',  'Toggle schizo mode (everyone)'),
 	('*9059#', 'Toggle pong mode (everyone)'),
@@ -70,6 +72,11 @@ DIAL_CODE_DESCRIPTIONS = [
 
 MAX_RECORDING_BYTES = 512 * 1024  # ~500KB cap, plenty for 10s of opus at low bitrate
 DIAL_MAX_LEN = 32
+
+# Seinfeld bass riff (static/sounds/seinfeld.mp3). One random start offset is picked
+# server-side per *212# and broadcast so everyone hears the same slice.
+SEINFELD_TRACK_LEN = 54  # seconds (actual file is ~54.19s)
+SEINFELD_CLIP_LEN  = 10  # seconds
 
 
 def generate_captcha():
@@ -517,6 +524,11 @@ async def handle_message(client_id: str, data: dict):
 		elif action == 'laugh':
 			logging.info(f'[{client_id}] Laugh')
 			await broadcast_all({'type': 'play_sound', 'sound': 'laugh'})
+		elif action == 'seinfeld':
+			# Pick one random start so the whole room hears the same 10-second slice.
+			start = round(random.uniform(0, SEINFELD_TRACK_LEN - SEINFELD_CLIP_LEN), 2)
+			logging.info(f'[{client_id}] Seinfeld clip @ {start}s')
+			await broadcast_all({'type': 'play_clip', 'sound': 'seinfeld', 'start': start, 'duration': SEINFELD_CLIP_LEN})
 		elif action == 'voice_changer':
 			# Private trigger - only the dialer's UI opens the voice changer popup. The FX
 			# are applied client-side to the dialer's own outgoing audio.

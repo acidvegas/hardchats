@@ -532,6 +532,12 @@ function handleSignal(data) {
 			playSound(data.sound);
 			break;
 
+		case 'play_clip':
+			// Random-slice sound (e.g. *212# Seinfeld). Same car-mode suppression.
+			if (state.settings.carMode) break;
+			playSoundClip(data.sound, data.start, data.duration);
+			break;
+
 		case 'reset_all':
 			setTrippyMode(false);
 			setSchizoMode(false);
