@@ -1,0 +1,8 @@
+.git
+.env
+__pycache__
+*.pyc
+logs
+nick_password.txt
+.serena
+.screens

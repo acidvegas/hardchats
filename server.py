@@ -2,6 +2,7 @@
 # HARDCHATS WebRTC Voice/Video Server - Developed by acidvegas (https://github.com/acidvegas/hardchats)
 # hardchats/server.py
 
+import asyncio
 import logging
 import random
 import secrets
@@ -20,6 +21,7 @@ except ImportError:
 	raise SystemExit('missing apv library (pip install apv)')
 
 import config
+import ircbot
 
 
 # Globals
@@ -371,6 +373,10 @@ async def handle_message(client_id: str, data: dict):
 			'join_sound': join_sound
 		})
 
+		# Announce the join in #hardchats (fire-and-forget so IRC latency never
+		# blocks the join flow). Genuine joins only, not reconnects.
+		asyncio.create_task(ircbot.bot.announce_join(username))
+
 	elif msg_type == 'reconnect':
 		token = data.get('token')
 
@@ -698,6 +704,8 @@ async def cleanup(client_id: str):
 			'type' : 'user_left',
 			'id'   : client_id
 		})
+		# Announce the leave in #hardchats (fire-and-forget).
+		asyncio.create_task(ircbot.bot.announce_leave(username))
 
 
 @web.middleware
@@ -710,6 +718,22 @@ async def no_cache_middleware(request: web.Request, handler):
 		response.headers['Pragma'] = 'no-cache'
 		response.headers['Expires'] = '0'
 	return response
+
+
+async def start_ircbot(app):
+	'''Start the baked-in IRC bot as a background task once the loop is running.'''
+	app['ircbot_task'] = asyncio.create_task(ircbot.bot.run())
+
+
+async def stop_ircbot(app):
+	'''Cancel the IRC bot task on shutdown and let it unwind cleanly.'''
+	task = app.get('ircbot_task')
+	if task:
+		task.cancel()
+		try:
+			await task
+		except asyncio.CancelledError:
+			pass
 
 
 async def init_app():
@@ -726,6 +750,10 @@ async def init_app():
 	app.router.add_get('/api/users/count', get_user_count)
 	app.router.add_post('/api/leave', leave_handler)
 	app.router.add_static('/static/', 'static')
+
+	# Baked-in IRC bot (event announcements + live join/leave in #hardchats)
+	app.on_startup.append(start_ircbot)
+	app.on_cleanup.append(stop_ircbot)
 
 	return app
 
