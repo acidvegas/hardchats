@@ -682,9 +682,10 @@ function applyBreakoutGatingForPeer(peerId) {
 		}
 	}
 
-	// Incoming: mute their <audio> element on our side.
+	// Incoming: mute their <audio> element on our side. Per-user volume 0 is also applied
+	// via .muted because iOS ignores audio.volume (read-only, always 1).
 	if (peer.audioElement) {
-		peer.audioElement.muted = !canHear || !state.volumeEnabled;
+		peer.audioElement.muted = !canHear || !state.volumeEnabled || (peer.volume ?? 100) === 0;
 	}
 
 	peer.breakoutMuted = !canHear;

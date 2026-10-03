@@ -401,6 +401,9 @@ function applyPeerVolume(peerId) {
 	}
 
 	peer.muted = vol === 0;
+
+	// Recompute element .muted (breakout + global + per-user 0) - the only mute iOS honors.
+	applyBreakoutGatingForPeer(peerId);
 }
 
 // Close volume popup when clicking outside
