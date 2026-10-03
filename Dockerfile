@@ -19,6 +19,7 @@ RUN rm requirements.txt
 # Copy only the necessary application files
 COPY config.py .
 COPY server.py .
+COPY ircbot.py .
 COPY static/ static/
 
 # Start the Python server
