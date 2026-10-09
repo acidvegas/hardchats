@@ -17,6 +17,7 @@ function toggleMic() {
 	state.users['local'].micOn = state.micEnabled;
 	console.log('[Mic] Sending mic_status:', state.micEnabled, 'WebSocket state:', state.ws?.readyState);
 	send({ type: 'mic_status', enabled: state.micEnabled });
+	if (typeof updateMediaSessionState === 'function') updateMediaSessionState();
 
 	// Re-apply breakout gating - the per-sender track flips above might not match
 	// breakout state (we may have just enabled the local audio track for peers we
@@ -73,9 +74,9 @@ async function toggleCam() {
 			state.localStream.removeTrack(track);
 		});
 
-		// Remove video senders and renegotiate with each peer
+		// Remove camera senders (never the screen-share sender) and renegotiate with each peer
 		for (const [peerId, peer] of Object.entries(state.peers)) {
-			const videoSenders = peer.pc.getSenders().filter(s => s.track && s.track.kind === 'video');
+			const videoSenders = peer.pc.getSenders().filter(s => s.track && s.track.kind === 'video' && s !== peer.screenSender);
 			videoSenders.forEach(sender => peer.pc.removeTrack(sender));
 			await sendOffer(peerId);
 		}
@@ -106,6 +107,7 @@ async function toggleCam() {
 	}
 
 	$('cam-btn').classList.toggle('active', state.camEnabled);
+	if (typeof updateMediaSessionState === 'function') updateMediaSessionState();
 	// Flip-camera button is only useful when the camera is on (mobile shows it via CSS).
 	$('flip-cam-btn')?.classList.toggle('hidden', !state.camEnabled);
 	updateUI();
@@ -179,10 +181,14 @@ async function toggleScreen() {
 					cursor: 'always',
 					displaySurface: 'monitor'
 				},
-				audio: false
+				// Tab/system audio is offered by the browser's share picker (Chromium only);
+				// if the user ticks it we get an audio track, toggled via screen-audio-btn.
+				audio: true
 			});
 
 			const screenTrack = state.screenStream.getVideoTracks()[0];
+			const screenAudioTrack = state.screenStream.getAudioTracks()[0] || null;
+			state.screenAudioEnabled = !!screenAudioTrack;
 
 			// Handle user stopping share via browser UI
 			screenTrack.onended = () => {
@@ -195,6 +201,7 @@ async function toggleScreen() {
 			for (const [peerId, peer] of Object.entries(state.peers)) {
 				if (!peer.pc || peer.pc.connectionState === 'closed') continue;
 				peer.screenSender = peer.pc.addTrack(screenTrack, state.screenStream);
+				if (screenAudioTrack) peer.screenAudioSender = peer.pc.addTrack(screenAudioTrack, state.screenStream);
 				await sendOffer(peerId);
 			}
 
@@ -227,6 +234,14 @@ async function toggleScreen() {
 					}
 					peer.screenSender = null;
 				}
+				if (peer.screenAudioSender) {
+					try {
+						peer.pc.removeTrack(peer.screenAudioSender);
+					} catch (e) {
+						console.warn(`[Screen] Failed to remove screen audio sender for ${peerId}:`, e);
+					}
+					peer.screenAudioSender = null;
+				}
 
 				await sendOffer(peerId);
 			}
@@ -242,7 +257,26 @@ async function toggleScreen() {
 	}
 
 	$('screen-btn').classList.toggle('active', state.screenEnabled);
+	updateScreenAudioBtn();
 	updateUI();
+}
+
+// Mute/unmute the shared tab/system audio while screen sharing. track.enabled=false
+// sends silence on the same sender, so no renegotiation is needed.
+function toggleScreenAudio() {
+	const track = state.screenStream?.getAudioTracks()[0];
+	if (!track) return;
+	state.screenAudioEnabled = !state.screenAudioEnabled;
+	track.enabled = state.screenAudioEnabled;
+	updateScreenAudioBtn();
+}
+
+// The screen-audio button only exists while sharing a screen that has an audio track.
+function updateScreenAudioBtn() {
+	const hasAudio = !!(state.screenEnabled && state.screenStream?.getAudioTracks().length);
+	$('screen-audio-btn').classList.toggle('hidden', !hasAudio);
+	$('screen-audio-btn').classList.toggle('active', hasAudio && state.screenAudioEnabled);
+	$('screen-audio-btn').classList.toggle('muted', hasAudio && !state.screenAudioEnabled);
 }
 
 function toggleVolume() {
@@ -257,6 +291,7 @@ function toggleVolume() {
 	// unmuting restores each user's volume slider value instantly.
 	Object.values(state.peers).forEach(peer => {
 		if (peer.audioElement) peer.audioElement.muted = !state.volumeEnabled;
+		if (peer.screenAudioElement) peer.screenAudioElement.muted = !state.volumeEnabled;
 	});
 
 	// Don't undo breakout-room muting when global unmute is hit.

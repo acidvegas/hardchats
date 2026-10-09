@@ -4,8 +4,8 @@ hardchats irc bot
 -----------------
 pure-stdlib async irc bot for irc.supernets.org, baked into the hardchats
 server (started as an asyncio task from server.py's on_startup). posts:
-  - scheduled announcements about hardchats community events in #superbowl
-    and #hardchats, and answers !events / !testevents on demand
+  - scheduled announcements about hardchats community events in #superbowl,
+    #hardchats and #phreak, and answers !events / !testevents on demand
   - live join/leave announcements in #hardchats as people enter/leave the
     WebRTC room (server.py calls bot.announce_join / bot.announce_leave)
 
@@ -29,10 +29,11 @@ from zoneinfo import ZoneInfo
 SERVER     = 'irc.supernets.org'
 PORT       = 6697
 USE_TLS    = True
-NICK       = 'EVENTS'
-USERNAME   = 'eventbot'
-REALNAME   = 'https://hardchats.com'
-CHANNELS   = ('#superbowl', '#hardchats')
+NICK       = 'HARDCHATS'
+USERNAME   = 'HARDCH'
+REALNAME   = 'HTTPS://HARDCHATS.COM'
+CHANNELS   = ('#superbowl', '#hardchats', '#phreak')
+YAP_CHANNELS = ('#hardchats', '#phreak')
 TZ         = ZoneInfo('America/New_York')
 HARDCHATS  = 'https://hardchats.com'
 
@@ -51,14 +52,16 @@ REJOIN_DELAY = 3.0
 # channels the bot should immediately part if it ever ends up in them
 BLACKHOLE_CHANNELS = ('#blackhole',)
 
+# only this nick may run !testevents
+OWNER_NICK = 'acidvegas'
+
 # nickserv registration: after the bot has been connected this long,
-# register the current nick (no email), DM the password to OWNER_NICK,
-# and identify. password persists in PASSWORD_PATH so reconnects skip
-# straight to identify.
-OWNER_NICK     = 'acidvegas'
-REGISTER_AFTER = 1.5 * 60 * 60   # 1.5 hours in seconds
+# register NICK (no email) with a random password. the password is saved
+# to PASSWORD_PATH only once NickServ confirms (+r on us), so reconnects
+# skip straight to identify.
+REGISTER_AFTER = 2 * 60 * 60     # 2 hours in seconds
 PASSWORD_LEN   = 20
-PASSWORD_PATH  = pathlib.Path(__file__).resolve().parent / 'nick_password.txt'
+PASSWORD_PATH  = pathlib.Path(__file__).resolve().parent / 'nickserv-hardchats.txt'
 
 
 # === irc formatting helpers ===========================================
@@ -115,43 +118,24 @@ def gen_password(n=PASSWORD_LEN):
 
 HYPE_VERBS = (
     'hop in', 'pull up', 'slide through', 'roll in', 'drop by',
-    'tune in', 'come thru', 'jack in', 'log on', 'beam in',
-    'slide in', 'swing through', 'fall through', 'ssh in', 'dial in',
-    'plug in', 'sync up', 'cruise by', 'materialize', 'spawn in',
-    'instantiate', 'boot up', 'mosey on over', 'port in', 'tab over',
-    'link up', 'warp in', 'queue up', 'mosh in', 'ride in',
-    'show up', 'check in', 'pop in', 'roll thru', 'come hang',
-    'connect', 'sign on', 'load in', 'drop a connection',
+    'tune in', 'come thru', 'slide in', 'swing through', 'cruise by',
+    'link up', 'ride in', 'show up', 'check in', 'pop in', 'come hang',
 )
-
-VENUE_NOTE  = color('(WebRTC voice + video, no tracking)', GREY)
-VENUE_NOTE2 = color('(no signup, no app, just a browser)', GREY)
-VENUE_NOTE3 = color('(free, open, noscript-friendly)', GREY)
-VENUE_NOTE4 = color('(mics + cams welcome, lurkers too)', GREY)
 
 # every CTA explicitly names hardchats.com as the location of the event
 CALL_TO_ACTIONS = (
-    f'{B}Happening on{B} {U}{HARDCHATS}{U} {VENUE_NOTE}',
-    f'{B}Live on{B} {U}{HARDCHATS}{U} {VENUE_NOTE}',
+    f'{B}Happening on{B} {U}{HARDCHATS}{U}',
+    f'{B}Live on{B} {U}{HARDCHATS}{U}',
     f'{B}Join us on{B} {U}{HARDCHATS}{U}',
-    f'{B}Where:{B} {U}{HARDCHATS}{U} {color("// fire up your mic + cam", GREY)}',
-    f'{B}This is on{B} {U}{HARDCHATS}{U} {VENUE_NOTE}',
     f'{B}All going down at{B} {U}{HARDCHATS}{U}',
-    f'{B}Hop on{B} {U}{HARDCHATS}{U} {VENUE_NOTE4}',
-    f'{B}Pull up at{B} {U}{HARDCHATS}{U} {VENUE_NOTE}',
-    f'{B}Come yap on{B} {U}{HARDCHATS}{U} {VENUE_NOTE}',
-    f'{B}See you at{B} {U}{HARDCHATS}{U} {VENUE_NOTE2}',
+    f'{B}Hop on{B} {U}{HARDCHATS}{U}',
+    f'{B}Pull up at{B} {U}{HARDCHATS}{U}',
+    f'{B}Come yap on{B} {U}{HARDCHATS}{U}',
+    f'{B}See you at{B} {U}{HARDCHATS}{U}',
     f'{B}Meet us at{B} {U}{HARDCHATS}{U}',
-    f'{B}Point your browser at{B} {U}{HARDCHATS}{U} {VENUE_NOTE2}',
-    f'{B}URL:{B} {U}{HARDCHATS}{U} {VENUE_NOTE3}',
-    f'{B}Slide into{B} {U}{HARDCHATS}{U} {VENUE_NOTE4}',
-    f'{B}We are at{B} {U}{HARDCHATS}{U} {VENUE_NOTE2}',
-    f'{B}Drop in to{B} {U}{HARDCHATS}{U} {VENUE_NOTE}',
-    f'{B}Link:{B} {U}{HARDCHATS}{U} {VENUE_NOTE2}',
-    f'{B}Venue:{B} {U}{HARDCHATS}{U} {VENUE_NOTE}',
-    f'{B}Go to{B} {U}{HARDCHATS}{U} {VENUE_NOTE3}',
-    f'{B}Meet at{B} {U}{HARDCHATS}{U} {VENUE_NOTE4}',
-    f'{B}Roll up to{B} {U}{HARDCHATS}{U} {VENUE_NOTE}',
+    f'{B}Slide into{B} {U}{HARDCHATS}{U}',
+    f'{B}Drop in to{B} {U}{HARDCHATS}{U}',
+    f'{B}Roll up to{B} {U}{HARDCHATS}{U}',
 )
 
 
@@ -159,80 +143,26 @@ CALL_TO_ACTIONS = (
 
 FNY_HEADERS = (
     'FRIDAY NIGHT YAPS',
-    'FRIDAY NIGHT HACKS',
-    'FRIDAY NIGHT CHATS',
     '>> FRIDAY NIGHT YAPS <<',
-    '<<< FRIDAY NIGHT HACKS >>>',
-    '[ FRIDAY NIGHT MOTHERFUCKIN HACKS ]',
+    '<<< FRIDAY NIGHT YAPS >>>',
+    '[ FRIDAY NIGHT YAPS ]',
     '// FRIDAY NIGHT YAPS //',
     ':: FRIDAY NIGHT YAPS ::',
-    '** FRIDAY NIGHT HACKS **',
+    '** FRIDAY NIGHT YAPS **',
     '$$$ FRIDAY NIGHT YAPS $$$',
-    'FRIDAY.NIGHT.HACKS',
-    'FRIDAY NIGHT [REDACTED]',
-    'FRIDAY NIGHT TERMINAL JAMS',
-    '$ ./fny --start',
-    'HACK NIGHT',
-    'HACK THE PLANET',
-    'HACK THE FUCKING PLANET',
-    'sudo friday-night-yaps',
-    'weekend.hack()',
-    'FRIDAY NIGHT VIBE CODE JAM',
-    'FRINIGHT HACKS',
 )
 
-# what FNY actually is: live hacking, terminal streams, vibe coding,
-# collaboration, hack-the-planet chaos
+# what FNY actually is: weekend, drinking, games, hacking, fucking around
 FNY_TAGLINES = (
-    'Live hacking, terminal streams, vibe coding, chaos',
-    'Stream your terminal, show off what youre hacking on',
-    'Live code, live break, live fix',
-    'Screenshare your stack, your dotfiles, your half-broken hack',
-    'Vibe coding + collab + hack-the-planet energy',
-    'Pair on your hack, find collaborators, fuck shit up',
-    'Demo your novel hacks, weird tools, dumb ideas',
-    'Collab on something, break something, ship something',
-    'Hacker hangout: terminal share + vibe code + yap',
-    'Novel hacks, weird stacks, late night chaos',
-    'Live stream your shit, watch others stream theirs',
-    'Come hack, come collab, come HACK THE FUCKING PLANET',
-    'Free-form hacking with friends',
-    'Show me what youre building, show me what youre breaking',
-    'Co-hack, co-debug, co-vibe',
-    'Open terminals, open repos, open chaos',
-    'Hack the planet, vibe code, find your people',
-    'Late night hacking, no agenda, all energy',
-    'Novel exploits, weird tools, vibe-coded bullshit',
-    'Cover your webcam, open your terminal, log on',
-)
-
-FNY_MOODS = (
-    'Lights low, terminals open',
-    'Mics hot, energy higher',
-    'Screens dim, ideas bright',
-    'Cursor blinking, brain humming',
-    'Monospace fonts, monospace vibes',
-    'Caps lock off, creativity on',
-    'Tabs over spaces, friends over deadlines',
-    'Nvim open, nothing else matters',
-    'Desk lamp on, ego off',
-    'One mic, three monitors, no plan',
-    'Fans whirring, ideas swirling',
-    'Tmux panes everywhere, zero regrets',
-    'Late night, low light, high focus',
-    'IDE wide open, coffee long cold',
-    'Kernels patched, vibes immaculate',
-    'Compilers warm, brains hot',
-    'Screen flicker, mind sharp',
-    'Lo-fi loops, high focus',
-    'Too much pizza, just enough segfaults',
-    'Thinkpads thinking, minds melting',
-    'Vim configs ricer than your apartment',
-    'Mechanical keyboards, mechanical thoughts',
-    'Monitors humming, brain too',
-    'Midnight committers in their natural habitat',
-    'Discord muted, terminal unmuted',
-    'RGB everywhere, regrets nowhere',
+    'Weekend starts here: drinks, games, hacking, shenanigans',
+    'Crack a drink, pull up, talk shit',
+    'Drinking, gaming, hacking, fucking around',
+    'No agenda, just the weekend and bad decisions',
+    'Hack something, play something, drink something',
+    'Shenanigans guaranteed, productivity not',
+    'Bring a drink, bring a game, bring whatever youre breaking',
+    'Games, hacks, booze, chaos',
+    'Fuck around and find out, live',
 )
 
 
@@ -240,7 +170,7 @@ def msg_friday_now():
     head = random.choice(FNY_HEADERS)
     return [
         f'{spark()} {banner(head, WHITE, RED)} {spark()} {color(B + "STARTING NOW" + B, YELLOW, BLACK)}',
-        f'{color(random.choice(FNY_TAGLINES), CYAN)} -- {color(random.choice(FNY_MOODS), PINK)}',
+        f'{color(random.choice(FNY_TAGLINES), CYAN)}',
         f'{B}{color(random.choice(HYPE_VERBS).upper(), LIME)}{B} :: {random.choice(CALL_TO_ACTIONS)}',
     ]
 
@@ -250,8 +180,8 @@ def msg_friday_teaser(hours_left):
     when = f'T-MINUS {hours_left}H'
     return [
         f'{spark()} {banner(head, WHITE, PURPLE)} {spark()} {color(when, ORANGE)}',
-        f'{color(random.choice(FNY_TAGLINES), CYAN)} -- {color(random.choice(FNY_MOODS), PINK)}',
-        f'{B}Tonight 9pm EST on{B} {U}{HARDCHATS}{U} {VENUE_NOTE}',
+        f'{color(random.choice(FNY_TAGLINES), CYAN)}',
+        f'{B}Tonight 9pm EST on{B} {U}{HARDCHATS}{U}',
     ]
 
 
@@ -265,65 +195,22 @@ ST_HEADERS = (
     'MONTHLY SHOW & TELL',
     '[ SHOW + TELL ]',
     '[[ SHOW AND TELL ]]',
-    '// SHOW.AND.TELL //',
+    '// SHOW AND TELL //',
     ':: SHOW AND TELL ::',
     '*** SHOW & TELL ***',
     'SHOW & TELL // MONTHLY',
-    'DEMO MONDAY',
-    'DEMO NIGHT',
-    'SHOWCASE NIGHT',
-    'THE DEMO MONDAY',
-    'show.tell()',
-    'show_and_tell.init()',
-    '$ ./showtell',
-    'SHOW & TELL :: monthly',
-    'MONTHLY DEMO JAM',
 )
 
-# what S&T actually is: demo what youve been building, see others'
-# work, find collaborators, get inspired -- becoming a contest w/ prizes
+# what S&T actually is: flex what youve been building or vibe coding
 ST_PROMPTS = (
-    'Demo what youve been building',
-    'Show off your latest project',
-    'Demo what youve been vibe coding',
-    'Pitch your project, get feedback',
-    'Show 5 minutes of your latest build',
-    'Screenshare your work, walk us through it',
-    'Show what youre proud of, what youre stuck on, what youve shipped',
-    'Demo your tools, your scripts, your apps',
-    'Pitch your idea, find co-conspirators',
-    'Show the project youve been keeping under wraps',
-    'Flex your build, get inspired by others',
-    'Demo your codebase, your stack, your hack',
-    'Show off, see others show off, find collaborators',
-    'Present your work, no slides required',
-    'Demo your side project, your weekend hack, your magnum opus',
-    'Pitch what youre building, get others on board',
-    'Live demo your latest thing',
-    'Show the thing youre weirdly proud of',
-)
-
-ST_FILLER = (
-    'Demo, watch demos, find collaborators, get inspired',
-    'Monthly demo night',
-    'Soon to be a contest -- monthly prizes incoming',
-    'PRIZES coming soon -- monthly winners get rewarded',
-    'See what others are building, get inspired',
-    'Find collaborators, get unstuck, share what youre building',
-    'Come demo, come watch, come get ideas',
-    'Doesnt have to be done -- show what you have',
-    'Works on my machine = good enough to demo',
-    'Collabs born here, projects ship from here',
-    '5 minute demos, infinite inspiration',
-    'Lurkers welcome, demoers welcomer',
-    'Come for the demos, stay for the collabs',
-    'Bring repos, bring screenshots, bring questions',
-    'Demos welcome from any stack, any state of done-ness',
-    'Pitch something, get feedback, find your people',
-    'This turns into a contest with prizes -- get warmed up',
-    'Audience of devs, no judgement, all curiosity',
-    'Find people to build with, find people to learn from',
-    'Come show off the work nobody at your job appreciates',
+    'Show off what youve been vibe coding',
+    'Flex what you built',
+    'Demo your project, your tool, your hack',
+    'Built something? Show it off',
+    'Screenshare your build and walk us through it',
+    'Doesnt have to be finished, show what youve got',
+    'See what everyone else has been building',
+    'Show off your side project',
 )
 
 
@@ -332,7 +219,7 @@ def msg_show_and_tell():
     when = color(f'{B}FIRST MONDAY OF EVERY MONTH @ 9PM EST{B}', YELLOW)
     return [
         f'{spark()} {banner(head, WHITE, BLUE)} {spark()} {when}',
-        f'{color(random.choice(ST_PROMPTS), LIME)} -- {color(random.choice(ST_FILLER), CYAN)}',
+        f'{color(random.choice(ST_PROMPTS), LIME)}',
         f'{random.choice(CALL_TO_ACTIONS)}',
     ]
 
@@ -343,67 +230,25 @@ LL_HEADERS = (
     'LUNCH & LEARN',
     'LUNCH AND LEARN',
     'LUNCH N LEARN',
-    '[[ LUNCH + LEARN ]]',    '<< LUNCH AND LEARN >>',
-    '// LUNCH.LEARN //',
+    '[[ LUNCH + LEARN ]]',
+    '<< LUNCH AND LEARN >>',
+    '// LUNCH & LEARN //',
     ':: LUNCH N LEARN ::',
     '*** LUNCH & LEARN ***',
     '[ LUNCH + LEARN ]',
-    'LUNCHBREAK CHATS',
-    'LUNCH+LEARN.EXE',
-    'WED LUNCH JAM',
-    'lunch.learn()',
-    '$ ./lunch-and-learn',
-    'WEDNESDAY OFFICE HOURS',
-    'lunch_and_learn.init()',
-    'WED MIDDAY DEV CHAT',
-    'MIDWEEK TECH TALK',
 )
 
-# what L&L actually is: techy discussion -- show off what you learned,
-# AI workflows, get help on a problem, share methodology
+# what L&L actually is: tech chats -- show off something or learn something
 LL_TOPICS = (
+    'Tech discussion, bring a topic',
     'Show off something you learned this week',
-    'Discuss AI workflows, share what works',
-    'Ask for help on a problem, get unstuck',
-    'Share a methodology, debate a methodology',
-    'Techy discussion, no agenda, just devs talking shop',
-    'Share new tools, novel approaches, weird tricks',
-    'AI tooling, prompting strategies, workflow shares',
-    'Pair on a problem, get a fresh perspective',
-    'Walk through your dev setup, your prompt stack, your pipeline',
-    'Show off the trick you figured out this week',
-    'Ask questions about your stack, get real answers',
-    'Share what youre learning, learn what others share',
-    'AI workflow show-and-tell',
-    'Open mic for technical questions',
-    'Come learn something, come teach something',
-    'Demo your workflow, swap tips, refine your stack',
-    'Discuss tools, methodologies, new tech',
-    'Bring a problem, leave with a plan',
-    'Show off a clever solve, hear about clever solves',
-    'Discuss the weird new framework, the wild new tool',
-    'Walk through how you actually use AI day-to-day',
-    'Methodology talk, tooling talk, stack talk',
-)
-
-LL_HINTS = (
-    'Bring questions, bring topics, bring discoveries',
-    'No agenda, no slides, just techy chat',
-    'The wednesday office hours nobody booked',
-    'Mics optional, topics encouraged',
-    'Lurk and learn, or pitch in',
-    'Come learn, come teach, come ask',
-    'Pair-program through problems',
-    'AI workflows, dev setups, methodologies -- whatever',
-    'Open mics, open questions, open answers',
-    'No question is too dumb, no method too weird',
-    'Discussion-format, casual but technical',
-    'Ask the dumb question, get the smart answer',
-    'Share something you learned, ask something youre stuck on',
-    'Bring your AI workflow, your prompt stack, your weird trick',
-    'The lunch break that teaches you something',
-    'Show your work, get help, share methods',
-    'Techy yap, but make it productive',
+    'Stuck on something? Get a fresh set of eyes',
+    'Talk tools, workflows, and whatever new tech youre into',
+    'Learn something, teach something',
+    'AI workflows, dev setups, how you actually work',
+    'Bring a question, leave with an answer',
+    'Share a trick you picked up',
+    'Casual tech talk over lunch',
 )
 
 
@@ -411,7 +256,7 @@ def msg_lunch_now():
     head = random.choice(LL_HEADERS)
     return [
         f'{spark()} {banner(head, WHITE, GREEN)} {spark()} {color(B + "LIVE NOW" + B, YELLOW, BLACK)}',
-        f'{color(random.choice(LL_TOPICS), CYAN)} -- {color(random.choice(LL_HINTS), PINK)}',
+        f'{color(random.choice(LL_TOPICS), CYAN)}',
         f'{random.choice(CALL_TO_ACTIONS)}',
     ]
 
@@ -420,8 +265,8 @@ def msg_lunch_teaser():
     head = random.choice(LL_HEADERS)
     return [
         f'{spark()} {banner(head, WHITE, GREEN)} {spark()} {color("Today @ 2PM EST", ORANGE)}',
-        f'{color(random.choice(LL_TOPICS), CYAN)} -- {color(random.choice(LL_HINTS), PINK)}',
-        f'{B}Today 2pm EST on{B} {U}{HARDCHATS}{U} {VENUE_NOTE}',
+        f'{color(random.choice(LL_TOPICS), CYAN)}',
+        f'{B}Today 2pm EST on{B} {U}{HARDCHATS}{U}',
     ]
 
 
@@ -442,13 +287,12 @@ def msg_events():
     rows += _event_row('LUNCH & LEARN',     'Every Wed @ 2PM EST',
                        'Show off what you learned, AI workflows, get help, share methodologies', ORANGE)
     rows += _event_row('SHOW & TELL',       '1st Monday of the month @ 9PM EST',
-                       'Show off what you built, see others work, find collaborators (contest + prizes soon)', PINK)
+                       'Show off what you built, see others work, find collaborators', PINK)
     return [
         f'{divider(46)}',
         f'  {title}',
         *rows,
         f'  {B}{color("ALL EVENTS HAPPEN ON", RED)}{B} {U}{HARDCHATS}{U}',
-        f'    {color("WebRTC voice/video group chat, IRC text backend", GREY)}',
         f'{divider(46)}',
     ]
 
@@ -460,6 +304,7 @@ class IRC:
         self.reader = None
         self.writer = None
         self.nick   = NICK
+        self.pending_pw = None   # password sent with REGISTER, saved once NickServ confirms
 
     async def connect(self):
         ctx = ssl.create_default_context() if USE_TLS else None
@@ -467,11 +312,11 @@ class IRC:
         await self.send(f'NICK {self.nick}')
         await self.send(f'USER {USERNAME} 0 * :{REALNAME}')
 
-    async def send(self, line):
+    async def send(self, line, secret=None):
         if self.writer is None or self.writer.is_closing():
             return
         line = line.replace('\r', '').replace('\n', ' ')[:480]
-        print(f'>> {line}', flush=True)
+        print(f'>> {line.replace(secret, "***") if secret else line}', flush=True)
         self.writer.write((line + '\r\n').encode('utf-8', 'replace'))
         await self.writer.drain()
 
@@ -497,19 +342,21 @@ class IRC:
             print(f'[!] announce failed: {e!r}', file=sys.stderr, flush=True)
 
     async def announce_join(self, username):
-        line = (f'{color(B + ">>" + B, LIME)} {B}{color(username, CYAN)}{B} '
-                f'{color("hopped into the yap", GREEN)} '
+        line = (f'🟢 {B}{color(username, CYAN)}{B} '
+                f'{color("is yappin", GREEN)} '
                 f'{color("// " + HARDCHATS, GREY)}')
-        await self._safe_privmsg('#hardchats', [line])
+        for ch in YAP_CHANNELS:
+            await self._safe_privmsg(ch, [line])
 
     async def announce_leave(self, username):
-        line = (f'{color(B + "<<" + B, RED)} {B}{color(username, ORANGE)}{B} '
-                f'{color("bailed from the yap", RED)}')
-        await self._safe_privmsg('#hardchats', [line])
+        line = (f'🔴 {B}{color(username, ORANGE)}{B} '
+                f'{color("left yaps", RED)}')
+        for ch in YAP_CHANNELS:
+            await self._safe_privmsg(ch, [line])
 
     async def _delayed_join(self, delay):
         await asyncio.sleep(delay)
-        for ch in CHANNELS:
+        for ch in dict.fromkeys(CHANNELS + YAP_CHANNELS):
             await self.send(f'JOIN {ch}')
 
     async def _delayed_rejoin(self, channel, delay):
@@ -518,44 +365,28 @@ class IRC:
 
     async def _nickserv_setup(self):
         """If we have a stored password, identify. Otherwise wait
-        REGISTER_AFTER seconds, register the nick (no email), DM the
-        password to OWNER_NICK + send a memo, and identify."""
-        if PASSWORD_PATH.exists():
-            pw = PASSWORD_PATH.read_text().strip()
-            if pw:
-                await asyncio.sleep(2)
-                await self.send(f'PRIVMSG NickServ :IDENTIFY {pw}')
-                print(f'[*] sent NickServ IDENTIFY (using stored password)', flush=True)
-                return
+        REGISTER_AFTER seconds and register NICK. The password is written
+        to PASSWORD_PATH by handle() when NickServ sets +r on us."""
+        pw = PASSWORD_PATH.read_text().strip() if PASSWORD_PATH.exists() else ''
+        if pw:
+            await asyncio.sleep(2)
+            await self.send(f'PRIVMSG NickServ :IDENTIFY {pw}', pw)
+            print(f'[*] sent NickServ IDENTIFY (using stored password)', flush=True)
+            return
 
         print(f'[*] nickserv registration scheduled in {REGISTER_AFTER:.0f}s', flush=True)
         await asyncio.sleep(REGISTER_AFTER)
 
-        if PASSWORD_PATH.exists():
+        if PASSWORD_PATH.exists() and PASSWORD_PATH.read_text().strip():
             return  # something else won the race
+        if self.pending_pw:
+            return  # a registration is already in flight
+        if self.nick != NICK:
+            print(f'[!] not registering fallback nick {self.nick}', file=sys.stderr, flush=True)
+            return
 
-        pw = gen_password(PASSWORD_LEN)
-        try:
-            PASSWORD_PATH.write_text(pw)
-            try:
-                PASSWORD_PATH.chmod(0o600)
-            except Exception:
-                pass
-        except Exception as e:
-            print(f'[!] could not persist password: {e}', file=sys.stderr, flush=True)
-
-        # supernets/atheme accepts REGISTER <password> with no email when
-        # email is optional; if your network requires email, append one here
-        await self.send(f'PRIVMSG NickServ :REGISTER {pw}')
-
-        msg = f'NickServ password for {self.nick} on {SERVER}: {pw}'
-        await self.send(f'PRIVMSG {OWNER_NICK} :{msg}')
-        # also memo, in case the owner is offline
-        await self.send(f'PRIVMSG MemoServ :SEND {OWNER_NICK} {msg}')
-
-        await asyncio.sleep(3)
-        await self.send(f'PRIVMSG NickServ :IDENTIFY {pw}')
-        print(f'[*] nickserv registered + identified as {self.nick}', flush=True)
+        self.pending_pw = gen_password(PASSWORD_LEN)
+        await self.send(f'PRIVMSG NickServ :REGISTER {self.pending_pw}', self.pending_pw)
 
     async def read_loop(self):
         while True:
@@ -598,6 +429,17 @@ class IRC:
             await self.send(f'NICK {self.nick}')
             return
 
+        # NickServ sets +r on us once REGISTER succeeds - only then persist the password
+        if cmd == 'MODE' and len(args) >= 3 and args[1].lower() == self.nick.lower() and '+r' in args[2] and self.pending_pw:
+            try:
+                PASSWORD_PATH.write_text(self.pending_pw)
+                PASSWORD_PATH.chmod(0o600)
+                print(f'[*] nickserv registered {self.nick}, password saved to {PASSWORD_PATH.name}', flush=True)
+            except Exception as e:
+                print(f'[!] could not persist password: {e}', file=sys.stderr, flush=True)
+            self.pending_pw = None
+            return
+
         if cmd == 'JOIN' and len(args) >= 2:
             who     = prefix.split('!', 1)[0]
             channel = args[1].lstrip(':')
@@ -625,7 +467,7 @@ class IRC:
 
             if verb == '!events':
                 await self.privmsg(reply_to, msg_events())
-            elif verb == '!testevents':
+            elif verb == '!testevents' and sender.lower() == OWNER_NICK.lower():
                 await self.run_testevents(reply_to, sub)
 
     async def run_testevents(self, reply_to, sub):

@@ -6,4 +6,4 @@ __pycache__/
 .env
 logs/
 .serena
-nick_password.txt
+nickserv-hardchats.txt

@@ -28,6 +28,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 	$('cam-btn').addEventListener('click', toggleCam);
 	$('flip-cam-btn')?.addEventListener('click', flipCamera);
 	$('screen-btn').addEventListener('click', toggleScreen);
+	$('screen-audio-btn').addEventListener('click', toggleScreenAudio);
+	$('pip-btn').addEventListener('click', togglePip);
 	$('volume-btn').addEventListener('click', toggleVolume);
 	$('users-btn').addEventListener('click', toggleSidebar);
 	$('close-sidebar').addEventListener('click', toggleSidebar);
@@ -391,6 +393,9 @@ function handleSignal(data) {
 				state.timerStarted = true;
 			}
 
+			requestWakeLock();
+			initMediaSession();
+
 			// Request notification permission on join if enabled in settings
 			if (state.settings.notifications) {
 				requestNotificationPermission();
@@ -452,6 +457,8 @@ function handleSignal(data) {
 				state.maximizedPeer = null;
 			}
 
+			// Fewer peers = bigger per-peer share of the camera upload budget.
+			applyVideoBitrateCap();
 			updateUI();
 
 			// Notification and sound
@@ -687,6 +694,9 @@ function applyBreakoutGatingForPeer(peerId) {
 	if (peer.audioElement) {
 		peer.audioElement.muted = !canHear || !state.volumeEnabled || (peer.volume ?? 100) === 0;
 	}
+	if (peer.screenAudioElement) {
+		peer.screenAudioElement.muted = !canHear || !state.volumeEnabled || (peer.volume ?? 100) === 0;
+	}
 
 	peer.breakoutMuted = !canHear;
 }
@@ -720,10 +730,7 @@ function applyCarModeAudioBitrate() {
 	const cap = state.settings.carMode ? CARMODE_AUDIO_BITRATE : undefined;
 	Object.values(state.peers).forEach(peer => {
 		if (!peer.audioSender) return;
-		const params = peer.audioSender.getParameters();
-		if (!params.encodings || !params.encodings.length) params.encodings = [{}];
-		params.encodings[0].maxBitrate = cap;
-		peer.audioSender.setParameters(params).catch(e => console.warn('[CarMode] audio setParameters failed:', e?.message || e));
+		updateSenderParams(peer.audioSender, enc => { enc.maxBitrate = cap; }, 'CarMode');
 	});
 }
 
@@ -734,10 +741,7 @@ function applyAudioOnlyGatingForPeer(peerId) {
 	const peerAudioOnly = !!state.users[peerId]?.audioOnly;
 	peer.pc.getSenders().forEach(sender => {
 		if (!sender.track || sender.track.kind !== 'video') return;
-		const params = sender.getParameters();
-		if (!params.encodings || !params.encodings.length) params.encodings = [{}];
-		params.encodings[0].active = !peerAudioOnly;
-		sender.setParameters(params).catch(e => console.warn('[CarMode] video gate failed:', e?.message || e));
+		updateSenderParams(sender, enc => { enc.active = !peerAudioOnly; }, 'CarMode');
 	});
 }
 
@@ -931,4 +935,111 @@ document.addEventListener('visibilitychange', () => {
 	if (document.visibilityState === 'visible' && state.audioCtx?.state === 'suspended') {
 		state.audioCtx.resume().catch(() => {});
 	}
+	// The browser drops the wake lock whenever the page is hidden - take it back.
+	if (document.visibilityState === 'visible' && state.myId && !state.intentionalDisconnect) {
+		requestWakeLock();
+	}
 });
+
+// ========== WAKE LOCK / MEDIA SESSION / PICTURE-IN-PICTURE ==========
+
+let wakeLock = null;
+
+// Keep the phone screen on while in a call.
+async function requestWakeLock() {
+	if (!('wakeLock' in navigator) || document.visibilityState !== 'visible' || wakeLock) return;
+	try {
+		wakeLock = await navigator.wakeLock.request('screen');
+		wakeLock.addEventListener('release', () => { wakeLock = null; });
+		console.log('[WakeLock] acquired');
+	} catch (e) {
+		console.warn('[WakeLock] request failed:', e?.message || e);
+	}
+}
+
+// Call controls for the OS / browser media UI (Chrome's PiP window, media hub, etc).
+// Unsupported actions throw, so each one is registered on its own.
+function initMediaSession() {
+	if (!('mediaSession' in navigator)) return;
+	navigator.mediaSession.metadata = new MediaMetadata({ title: 'HARDCHATS', artist: 'hardchats.com' });
+	const handlers = {
+		togglemicrophone      : () => toggleMic(),
+		togglecamera          : () => toggleCam(),
+		hangup                : () => $('hangup-btn')?.click(),
+		enterpictureinpicture : () => enterPip(),
+	};
+	for (const [action, handler] of Object.entries(handlers)) {
+		try { navigator.mediaSession.setActionHandler(action, handler); } catch (e) {}
+	}
+	updateMediaSessionState();
+}
+
+function updateMediaSessionState() {
+	if (!('mediaSession' in navigator)) return;
+	Promise.resolve().then(() => navigator.mediaSession.setMicrophoneActive?.(state.micEnabled)).catch(() => {});
+	Promise.resolve().then(() => navigator.mediaSession.setCameraActive?.(state.camEnabled)).catch(() => {});
+}
+
+// Picture-in-Picture uses one persistent hidden <video> kept fed with the most relevant
+// remote video (maximized tile, else a screen share, else the first camera). The grid
+// tiles are rebuilt on every UI update, which would close PiP, so they can't be used.
+// Keeping it pre-fed lets enterPip() run synchronously inside the click (iOS needs that).
+const PIP_SUPPORTED = !!(document.pictureInPictureEnabled ||
+	document.createElement('video').webkitSupportsPresentationMode?.('picture-in-picture'));
+let pipVideo = null;
+
+function getPipStream() {
+	if (state.settings.carMode) return null;
+	const myBreakout = !!state.users['local']?.breakout;
+	const tiles = [];
+	Object.entries(state.peers).forEach(([id, peer]) => {
+		if (peer.videoOff || !!state.users[id]?.breakout !== myBreakout) return;
+		if (state.users[id]?.screenOn && peer.screenStream?.getVideoTracks().length > 0) tiles.push({ id: `${id}-screen`, stream: peer.screenStream, screen: true });
+		if (state.users[id]?.camOn && peer.stream?.getVideoTracks().length > 0) tiles.push({ id, stream: peer.stream, screen: false });
+	});
+	const tile = tiles.find(t => t.id === state.maximizedPeer) || tiles.find(t => t.screen) || tiles[0];
+	return tile ? tile.stream : null;
+}
+
+// Called from updateUI: retarget the PiP video and show/hide the PiP button.
+function syncPip() {
+	if (!PIP_SUPPORTED) return;
+	const stream = getPipStream();
+	if (!pipVideo) {
+		pipVideo = document.createElement('video');
+		pipVideo.id = 'pip-video';
+		pipVideo.muted = true;
+		pipVideo.autoplay = true;
+		pipVideo.playsInline = true;
+		($('peer-audio-container') || document.body).appendChild(pipVideo);
+	}
+	if (pipVideo.srcObject !== stream) {
+		pipVideo.srcObject = stream;
+		if (stream) pipVideo.play().catch(() => {});
+	}
+	if (!stream && document.pictureInPictureElement === pipVideo) {
+		document.exitPictureInPicture().catch(() => {});
+	}
+	$('pip-btn').classList.toggle('hidden', !stream);
+	$('pip-btn').classList.toggle('active', !!stream && document.pictureInPictureElement === pipVideo);
+}
+
+function enterPip() {
+	if (!pipVideo?.srcObject) return;
+	if (pipVideo.requestPictureInPicture) {
+		pipVideo.requestPictureInPicture()
+			.then(() => $('pip-btn').classList.add('active'))
+			.catch(e => console.warn('[PiP] failed:', e?.message || e));
+		pipVideo.addEventListener('leavepictureinpicture', () => $('pip-btn').classList.remove('active'), { once: true });
+	} else if (pipVideo.webkitSetPresentationMode) {
+		pipVideo.webkitSetPresentationMode('picture-in-picture');
+	}
+}
+
+function togglePip() {
+	if (document.pictureInPictureElement) {
+		document.exitPictureInPicture().catch(() => {});
+	} else {
+		enterPip();
+	}
+}
