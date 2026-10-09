@@ -3,6 +3,6 @@
 __pycache__
 *.pyc
 logs
-nick_password.txt
+nickserv-hardchats.txt
 .serena
 .screens

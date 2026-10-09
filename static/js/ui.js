@@ -17,6 +17,7 @@ function clearPersistentLocalVideos() {
 function updateUI() {
 	updateUsersList();
 	updateVideoGrid();
+	if (typeof syncPip === 'function') syncPip();
 }
 
 function updateSpeakingIndicator(peerId, speaking) {
@@ -69,27 +70,30 @@ function updateVideoGrid() {
 	// and isolated from us, no reason to show their cam/screen.
 	const myBreakout = !!state.users['local']?.breakout;
 
-	// Add remote users' cameras and screens
+	// Add remote users' cameras and screens - each is its own tile, so a person can have
+	// their camera and a screen share up at the same time.
 	Object.entries(state.peers).forEach(([id, peer]) => {
 		if (!!state.users[id]?.breakout !== myBreakout) return;
-		if (state.users[id]?.camOn && peer.stream && !peer.videoOff) {
-			// Check if stream has video tracks - could be camera or screen
-			const videoTracks = peer.stream.getVideoTracks();
-			if (videoTracks.length > 0) {
-				camUsers.push({
-					id,
-					username: peer.username,
-					stream: peer.stream,
-					isLocal: false,
-					isScreen: false,
-					speaking: state.users[id]?.speaking
-				});
-			}
+		if (peer.videoOff) return;
+		if (state.users[id]?.camOn && peer.stream?.getVideoTracks().length > 0) {
+			camUsers.push({
+				id,
+				username: peer.username,
+				stream: peer.stream,
+				isLocal: false,
+				isScreen: false,
+				speaking: state.users[id]?.speaking
+			});
 		}
-		// Show screen share indicator for remote users
-		if (state.users[id]?.screenOn && peer.stream && !peer.videoOff) {
-			// Screen shares come through the same stream for remote peers
-			// The peer.stream may contain multiple video tracks
+		if (state.users[id]?.screenOn && peer.screenStream?.getVideoTracks().length > 0) {
+			camUsers.push({
+				id: `${id}-screen`,
+				username: `${peer.username} (Screen)`,
+				stream: peer.screenStream,
+				isLocal: false,
+				isScreen: true,
+				speaking: false
+			});
 		}
 	});
 
@@ -398,6 +402,9 @@ function applyPeerVolume(peerId) {
 	// removed because mobile browsers wouldn't play its synthesized output).
 	if (peer.audioElement) {
 		peer.audioElement.volume = Math.min(1.0, vol / 100);
+	}
+	if (peer.screenAudioElement) {
+		peer.screenAudioElement.volume = Math.min(1.0, vol / 100);
 	}
 
 	peer.muted = vol === 0;

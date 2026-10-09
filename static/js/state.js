@@ -26,6 +26,7 @@ const state = {
 	micEnabled: true,
 	camEnabled: false,
 	screenEnabled: false,
+	screenAudioEnabled: false, // shared tab/system audio on/off while screen sharing
 	// Which camera to capture: 'user' (front, default) or 'environment' (back). Flipped
 	// via the mobile flip-camera button.
 	facingMode: 'user',
@@ -97,3 +98,19 @@ function validateUsername(name) {
 	return USERNAME_REGEX.test(name);
 }
 
+// Serialized RTCRtpSender parameter updates. Chrome rejects a setParameters() when another
+// getParameters()/setParameters() pair ran on the same sender in the same task (bitrate cap
+// + car-mode gating both touch video senders), so each sender's updates run one at a time,
+// each with a fresh getParameters(). mutate() edits encodings[0].
+const senderParamQueues = new WeakMap();
+
+function updateSenderParams(sender, mutate, tag) {
+	const next = (senderParamQueues.get(sender) || Promise.resolve()).then(() => {
+		const params = sender.getParameters();
+		if (!params.encodings || !params.encodings.length) params.encodings = [{}];
+		mutate(params.encodings[0]);
+		return sender.setParameters(params);
+	}).catch(e => console.warn(`[${tag}] setParameters failed:`, e?.message || e));
+	senderParamQueues.set(sender, next);
+	return next;
+}

@@ -259,6 +259,10 @@ async function createPeerConnection(peerId, username, initiator) {
 		iceRestartCount: 0,
 		connectionTimeout: null,
 		screenSender: null,
+		screenAudioSender: null,
+		micStreamId: null,         // id of their mic+camera stream (first stream negotiated)
+		screenStream: null,        // their screen-share stream (video + optional audio)
+		screenAudioElement: null,  // separate sink for their shared tab/system audio
 		initiator,
 		// Perfect negotiation state. Polite peer (deterministic by peer-id compare)
 		// rolls back its own offer when an offer collision happens; impolite peer
@@ -282,6 +286,10 @@ async function createPeerConnection(peerId, username, initiator) {
 		if (screenTrack && screenTrack.readyState === 'live') {
 			state.peers[peerId].screenSender = pc.addTrack(screenTrack, state.screenStream);
 		}
+		const screenAudioTrack = state.screenStream.getAudioTracks()[0];
+		if (screenAudioTrack && screenAudioTrack.readyState === 'live') {
+			state.peers[peerId].screenAudioSender = pc.addTrack(screenAudioTrack, state.screenStream);
+		}
 	}
 
 	pc.ontrack = (e) => {
@@ -294,20 +302,29 @@ async function createPeerConnection(peerId, username, initiator) {
 		const hasAudio = stream.getAudioTracks().length > 0;
 		const hasVideo = stream.getVideoTracks().length > 0;
 
+		// A peer sends up to two streams: their mic+camera stream (always negotiated first,
+		// since local tracks are added before any screen tracks) and, while sharing, a
+		// separate screen stream (video + optional tab/system audio). Each gets its own
+		// tile/sink so a screen share never replaces or hides their camera or mic.
+		if (!state.peers[peerId].micStreamId) state.peers[peerId].micStreamId = stream.id;
+		const isScreenStream = stream.id !== state.peers[peerId].micStreamId;
+
+		if (isScreenStream) {
+			state.peers[peerId].screenStream = stream;
+			if (hasAudio) setupPeerScreenAudio(peerId, stream);
+			updateUI();
+			// Screen tile visibility follows screen_status + this stream's video track.
+			stream.onaddtrack = () => updateUI();
+			stream.onremovetrack = () => updateUI();
+			return;
+		}
+
 		// Audio playback is now wholly owned by setupPeerAudio (Web Audio graph + hidden
 		// <audio>). Track-level .enabled flips are not needed - global mute and per-peer
 		// volume are handled at the audio element / GainNode.
-		if (hasAudio) {
-			setupPeerAudio(peerId, stream);
-			// Use this as the display stream only if we don't already have one - keeps
-			// a later screen-share video-only stream from displacing audio+camera here.
-			if (!state.peers[peerId].stream) {
-				state.peers[peerId].stream = stream;
-			}
-		}
+		state.peers[peerId].stream = stream;
+		if (hasAudio) setupPeerAudio(peerId, stream);
 		if (hasVideo) {
-			// Latest video stream wins for the visible tile (current behavior preserved).
-			state.peers[peerId].stream = stream;
 			state.peers[peerId].camOn = true;
 			if (state.users[peerId]) state.users[peerId].camOn = true;
 		}
@@ -389,6 +406,15 @@ async function createPeerConnection(peerId, username, initiator) {
 			if (typeof applyVideoBitrateCap === 'function') applyVideoBitrateCap();
 			if (typeof applyAudioOnlyGatingForPeer === 'function') applyAudioOnlyGatingForPeer(peerId);
 			if (typeof applyCarModeAudioBitrate === 'function') applyCarModeAudioBitrate();
+			// When we answered their initial offer, tracks with no matching m-line in it
+			// (e.g. our screen audio, or screen video alongside our camera) were never
+			// negotiated. Offer again so they get added.
+			if (pc.getTransceivers().some(t => t.sender.track && !t.mid)) {
+				// Re-gate afterwards so car-mode peers also get the newly added video paused.
+				sendOffer(peerId).then(() => {
+					if (typeof applyAudioOnlyGatingForPeer === 'function') applyAudioOnlyGatingForPeer(peerId);
+				});
+			}
 			updateUI();
 
 		} else if (pc.connectionState === 'failed') {
@@ -733,6 +759,41 @@ function setupPeerAudio(peerId, stream) {
 	}
 }
 
+// Hidden sink for a peer's shared tab/system audio. Same tag rules as the mic sink
+// (speakerMode), and the same mute/volume rules (applied via breakout gating, which
+// combines global mute, per-user volume 0 and breakout state).
+function setupPeerScreenAudio(peerId, stream) {
+	const peer = state.peers[peerId];
+	if (!peer) return;
+
+	const desiredMode = state.settings?.speakerMode !== false ? 'video' : 'audio';
+	if (peer.screenAudioElement && peer.screenAudioElement.dataset.audioMode !== desiredMode) {
+		try { peer.screenAudioElement.srcObject = null; } catch (e) {}
+		try { peer.screenAudioElement.remove(); } catch (e) {}
+		peer.screenAudioElement = null;
+	}
+	if (!peer.screenAudioElement) {
+		const sinkEl = document.createElement(desiredMode);
+		sinkEl.autoplay = true;
+		sinkEl.playsInline = true;
+		sinkEl.dataset.audioMode = desiredMode;
+		sinkEl.id = `peer-screen-audio-${peerId}`;
+		const container = document.getElementById('peer-audio-container') || document.body;
+		container.appendChild(sinkEl);
+		peer.screenAudioElement = sinkEl;
+	}
+	if (peer.screenAudioElement.srcObject !== stream) {
+		peer.screenAudioElement.srcObject = stream;
+		peer.screenAudioElement.play().catch(e => {
+			console.warn(`[Audio] screen audio play() rejected for ${peerId}:`, e?.message || e);
+			schedulePeerAudioPlayRetry();
+		});
+	}
+	peer.screenAudioElement.volume = Math.min(1.0, (peer.volume ?? 100) / 100);
+	if (typeof applyBreakoutGatingForPeer === 'function') applyBreakoutGatingForPeer(peerId);
+	console.log(`[Audio] screen audio setup for ${peerId}`);
+}
+
 // Recreate the playback primer + every peer's audio sink so the new speakerMode
 // (audio vs video tag) takes effect. Called from the settings toggle handler.
 function rebuildAudioSinksForSpeakerMode() {
@@ -752,6 +813,7 @@ function rebuildAudioSinksForSpeakerMode() {
 		if (stream && stream.getAudioTracks && stream.getAudioTracks().length > 0) {
 			setupPeerAudio(peerId, stream);
 		}
+		if (peer.screenAudioElement?.srcObject) setupPeerScreenAudio(peerId, peer.screenAudioElement.srcObject);
 	}
 }
 
@@ -778,6 +840,11 @@ function teardownPeerAudio(peerId) {
 		peer.audioElement.srcObject = null;
 		peer.audioElement.remove();
 		peer.audioElement = null;
+	}
+	if (peer.screenAudioElement) {
+		peer.screenAudioElement.srcObject = null;
+		peer.screenAudioElement.remove();
+		peer.screenAudioElement = null;
 	}
 }
 
