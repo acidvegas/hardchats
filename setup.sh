@@ -51,4 +51,6 @@ docker run -d --name hardchats --restart unless-stopped -p 127.0.0.1:58080:58080
   -e TURN_USERNAME=${TURN_USERNAME} \
   -e TURN_PASSWORD=${TURN_PASSWORD} \
   -e TURN_REALM=${TURN_REALM} \
+  -e ZULIP_BOT_EMAIL=${ZULIP_BOT_EMAIL} \
+  -e ZULIP_BOT_KEY=${ZULIP_BOT_KEY} \
   hardchats

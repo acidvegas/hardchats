@@ -11,6 +11,7 @@ import string
 import uuid
 
 try:
+	import aiohttp
 	from aiohttp import web
 except ImportError:
 	raise SystemExit('missing aiohttp library (pip install aiohttp)')
@@ -376,6 +377,7 @@ async def handle_message(client_id: str, data: dict):
 		# Announce the join in #hardchats (fire-and-forget so IRC latency never
 		# blocks the join flow). Genuine joins only, not reconnects.
 		asyncio.create_task(ircbot.bot.announce_join(username))
+		asyncio.create_task(zulip_announce(f':green_circle: **{username}** is yappin // [hardchats.com](https://hardchats.com)'))
 
 	elif msg_type == 'reconnect':
 		token = data.get('token')
@@ -706,6 +708,24 @@ async def cleanup(client_id: str):
 		})
 		# Announce the leave in #hardchats (fire-and-forget).
 		asyncio.create_task(ircbot.bot.announce_leave(username))
+		asyncio.create_task(zulip_announce(f':red_circle: **{username}** left yaps'))
+
+
+async def zulip_announce(content: str):
+	'''Post a join/leave line to Zulip #supernets > hardchats (no-op without a bot key).'''
+
+	if not config.ZULIP_BOT_KEY:
+		return
+
+	data = {'type': 'stream', 'to': config.ZULIP_STREAM, 'topic': config.ZULIP_TOPIC, 'content': content}
+	auth = aiohttp.BasicAuth(config.ZULIP_BOT_EMAIL, config.ZULIP_BOT_KEY)
+	try:
+		async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10), headers={'User-Agent': config.USER_AGENT}) as session:
+			async with session.post(f'{config.ZULIP_SITE}/api/v1/messages', data=data, auth=auth) as resp:
+				if resp.status != 200:
+					logging.warning(f'Zulip announce failed: {resp.status} {(await resp.text())[:200]}')
+	except Exception as e:
+		logging.warning(f'Zulip announce failed: {e}')
 
 
 @web.middleware
