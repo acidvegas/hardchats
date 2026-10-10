@@ -377,7 +377,7 @@ async def handle_message(client_id: str, data: dict):
 		# Announce the join in #hardchats (fire-and-forget so IRC latency never
 		# blocks the join flow). Genuine joins only, not reconnects.
 		asyncio.create_task(ircbot.bot.announce_join(username))
-		asyncio.create_task(zulip_announce(f':green_circle: **{username}** is yappin // [hardchats.com](https://hardchats.com)'))
+		asyncio.create_task(zulip_announce(f':green_circle: **{username}** joined the chat'))
 
 	elif msg_type == 'reconnect':
 		token = data.get('token')
@@ -708,7 +708,7 @@ async def cleanup(client_id: str):
 		})
 		# Announce the leave in #hardchats (fire-and-forget).
 		asyncio.create_task(ircbot.bot.announce_leave(username))
-		asyncio.create_task(zulip_announce(f':red_circle: **{username}** left yaps'))
+		asyncio.create_task(zulip_announce(f':red_circle: **{username}** left the chat'))
 
 
 async def zulip_announce(content: str):
