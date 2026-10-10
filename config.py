@@ -50,8 +50,8 @@ IRC_MAX_BACKLOG     = 5000  # max messages to keep in chat history
 ZULIP_SITE      = os.getenv('ZULIP_SITE', 'https://zulip.supernets.org')
 ZULIP_BOT_EMAIL = os.getenv('ZULIP_BOT_EMAIL')
 ZULIP_BOT_KEY   = os.getenv('ZULIP_BOT_KEY')
-ZULIP_STREAM    = 'supernets'
-ZULIP_TOPIC     = 'hardchats'
+ZULIP_STREAM    = 'hardchats'
+ZULIP_TOPIC     = '' # general chat
 USER_AGENT      = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36'
 
 
