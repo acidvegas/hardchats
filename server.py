@@ -712,7 +712,7 @@ async def cleanup(client_id: str):
 
 
 async def zulip_announce(content: str):
-	'''Post a join/leave line to Zulip #supernets > hardchats (no-op without a bot key).'''
+	'''Post a join/leave line to Zulip #hardchats (no-op without a bot key).'''
 
 	if not config.ZULIP_BOT_KEY:
 		return
