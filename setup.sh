@@ -30,8 +30,8 @@ docker run -d \
   --listening-ip=${PUBLIC_IP} \
   --relay-ip=${PUBLIC_IP} \
   --external-ip=${PUBLIC_IP} \
-  --min-port=60000 \
-  --max-port=60499 \
+  --min-port=61000 \
+  --max-port=65535 \
   --fingerprint \
   --lt-cred-mech \
   --user=${TURN_USERNAME}:${TURN_PASSWORD} \
