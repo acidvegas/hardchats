@@ -6,7 +6,7 @@ pure-stdlib async irc bot for irc.supernets.org, baked into the hardchats
 server (started as an asyncio task from server.py's on_startup). posts:
   - scheduled announcements about hardchats community events in #superbowl,
     #hardchats and #phreak, and answers !events / !testevents on demand
-  - live join/leave announcements in #hardchats as people enter/leave the
+  - live join/leave announcements in #hardchats and #phreak as people enter/leave the
     WebRTC room (server.py calls bot.announce_join / bot.announce_leave)
 
 requires python 3.9+ (uses zoneinfo; the tzdata package supplies the zone
@@ -342,15 +342,12 @@ class IRC:
             print(f'[!] announce failed: {e!r}', file=sys.stderr, flush=True)
 
     async def announce_join(self, username):
-        line = (f'🟢 {B}{color(username, CYAN)}{B} '
-                f'{color("is yappin", GREEN)} '
-                f'{color("// " + HARDCHATS, GREY)}')
+        line = f'🟢 {B}{color(username, CYAN)}{B} {color("joined hardchats", GREEN)}'
         for ch in YAP_CHANNELS:
             await self._safe_privmsg(ch, [line])
 
     async def announce_leave(self, username):
-        line = (f'🔴 {B}{color(username, ORANGE)}{B} '
-                f'{color("left yaps", RED)}')
+        line = f'🔴 {B}{color(username, ORANGE)}{B} {color("left hardchats", RED)}'
         for ch in YAP_CHANNELS:
             await self._safe_privmsg(ch, [line])
 
