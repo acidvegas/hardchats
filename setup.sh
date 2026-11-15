@@ -24,7 +24,7 @@ docker run -d \
   --name coturn \
   --restart unless-stopped \
   --network host \
-  instrumentisto/coturn \
+  coturn/coturn:4.19.0 \
   -n \
   --listening-port=${TURN_PORT} \
   --listening-ip=${PUBLIC_IP} \
@@ -37,8 +37,6 @@ docker run -d \
   --user=${TURN_USERNAME}:${TURN_PASSWORD} \
   --realm=${TURN_REALM} \
   --no-tls \
-  --no-dtls \
-  --no-cli \
   --log-file=stdout
 
 # Run hardchats container
