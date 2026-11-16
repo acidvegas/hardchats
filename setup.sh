@@ -40,7 +40,7 @@ docker run -d \
   --log-file=stdout
 
 # Run hardchats container
-docker run -d --name hardchats --restart unless-stopped -p 127.0.0.1:58080:58080 \
+docker run -d --name hardchats --restart unless-stopped --user 10001:10001 -p 127.0.0.1:58080:58080 \
   -e IRC_SERVER=${IRC_SERVER} \
   -e IRC_PORT=${IRC_PORT} \
   -e IRC_CHANNEL=${IRC_CHANNEL} \
