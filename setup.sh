@@ -6,8 +6,8 @@
 # Load environment variables
 [ -f .env ] && source .env || { echo "Error: .env file not found"; exit 1; }
 
-# Set xtrace, exit on error, & verbose mode (after loading environment variables)
-set -xev
+# Exit on error & verbose mode (no xtrace: it would print the TURN password and Zulip key)
+set -ev
 
 # Build the hardchats image
 docker build -t hardchats .
