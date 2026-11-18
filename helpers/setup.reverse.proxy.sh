@@ -14,8 +14,8 @@ server {
 }
 
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 443 ssl;
+    listen [::]:443 ssl;
     server_name dev.hardchats.com;
 
     ssl_certificate     /etc/letsencrypt/live/hardchats.com/fullchain.pem;
