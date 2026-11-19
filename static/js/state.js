@@ -21,6 +21,13 @@ const state = {
 	localAnalyser: null,
 	localAudioSource: null,
 	screenStream: null,
+	// LiveKit SFU session (livekit.js). Each LiveKit identity is our server client id, so
+	// remote participants map 1:1 onto state.peers / state.users.
+	room: null,
+	micPub: null,
+	camPub: null,
+	screenPub: null,
+	screenAudioPub: null,
 	peers: {},
 	users: {},
 	micEnabled: true,
@@ -77,9 +84,6 @@ const state = {
 	}
 };
 
-// Buffer for ICE candidates that arrive before peer connection is ready
-const pendingCandidates = {};
-
 const USERNAME_REGEX = /^[a-zA-Z_][a-zA-Z0-9_]{0,19}$/;
 
 const $ = (id) => document.getElementById(id);
@@ -96,21 +100,4 @@ function send(data) {
 
 function validateUsername(name) {
 	return USERNAME_REGEX.test(name);
-}
-
-// Serialized RTCRtpSender parameter updates. Chrome rejects a setParameters() when another
-// getParameters()/setParameters() pair ran on the same sender in the same task (bitrate cap
-// + car-mode gating both touch video senders), so each sender's updates run one at a time,
-// each with a fresh getParameters(). mutate() edits encodings[0].
-const senderParamQueues = new WeakMap();
-
-function updateSenderParams(sender, mutate, tag) {
-	const next = (senderParamQueues.get(sender) || Promise.resolve()).then(() => {
-		const params = sender.getParameters();
-		if (!params.encodings || !params.encodings.length) params.encodings = [{}];
-		mutate(params.encodings[0]);
-		return sender.setParameters(params);
-	}).catch(e => console.warn(`[${tag}] setParameters failed:`, e?.message || e));
-	senderParamQueues.set(sender, next);
-	return next;
 }

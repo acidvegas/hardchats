@@ -3,7 +3,7 @@
 ![](./.screens/preview.png)
 
 ## About
-HARDCHATS is a lightweight voice & video chat platform for small groups. It runs entirely through a self-hosted [coturn](https://github.com/coturn/coturn) TURN relay rather than direct peer-to-peer, so participants never expose their IPs to each other. There's an optional IRC sidebar that bridges into a regular IRC channel for text chat.
+HARDCHATS is a lightweight voice & video chat platform for small groups. Media runs through a self-hosted [LiveKit](https://github.com/livekit/livekit) SFU rather than direct peer-to-peer, so participants never expose their IPs to each other, and each person uploads their streams once no matter how many people are in the room. Every audio & video frame is end-to-end encrypted in the browser before it reaches the SFU: each participant has its own key, handed to the others sealed with an ECDH shared secret, and rotated whenever someone leaves. There's an optional IRC sidebar that bridges into a regular IRC channel for text chat.
 
 It's intentionally admin-less - there are no moderators, no roles, no kicks, no bans. The room is self-moderated by whoever's in it. To keep that workable, the client ships with a couple of safety levers:
 
@@ -50,8 +50,26 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
     }
+
+    # LiveKit signaling (LIVEKIT_URL=wss://hardchats.com/livekit)
+    location /livekit/ {
+        proxy_pass http://127.0.0.1:7880/;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 3600s;
+    }
 }
 ```
+
+#### LiveKit setup
+`setup.sh` runs the SFU from [livekit.yaml](./livekit.yaml) next to the hardchats container. Media needs these ports open to the internet: `7882/udp` (ICE), `7881/tcp` (ICE over TCP) & `5349/tcp` (TURN over TLS, using the hardchats.com certificate). Generate an API key pair for `.env` with `docker run --rm livekit/livekit-server:v1.13.11 generate-keys`.
 
 ```bash
 sudo ln -sf /etc/nginx/sites-available/hardchats.com.conf /etc/nginx/sites-enabled/

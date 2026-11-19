@@ -1,11 +1,12 @@
 // HardChats Client - Main Entry Point, Signaling & WebSocket
-// Requires: state, $, send, validateUsername, pendingCandidates from state.js
+// Requires: state, $, send, validateUsername from state.js
 // Requires: debug.js (console overrides loaded early)
-// Requires: turn.js (loadTurnConfig, getRtcConfig, testTurnServer)
 // Requires: notifications.js (showNotification, playSound, requestNotificationPermission)
 // Requires: settings.js (loadSettings, loadSavedUsername, saveUsername, loadSavedDevices)
 // Requires: ui.js (updateUI)
-// Requires: webrtc.js (createPeerConnection, handleOffer, handleAnswer, handleCandidate, setupLocalAudioAnalyser)
+// Requires: webrtc.js (setupLocalAudioAnalyser, teardownPeerAudio)
+// Requires: livekit.js (loadLivekitConfig, connectLivekit, disconnectLivekit, ensurePeer, removePeer, applySubscriptionsAll, republishMic, syncOutgoingAudio)
+// Requires: e2ee.js (handleE2EEMessage, rotateE2EEOnLeave)
 // Requires: media.js (toggleMic, toggleCam, toggleScreen, toggleVolume, toggleDefcon)
 // Requires: irc.js (initIrcListeners, toggleIrcSidebar, disconnectIrc)
 
@@ -131,11 +132,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 async function loadConfig() {
 	try {
-		const res = await fetch('/api/config');
+		const res = await fetch('api/config');
 		const config = await res.json();
 
-		// Load TURN config (from turn.js)
-		loadTurnConfig(config);
+		// Load LiveKit config (from livekit.js)
+		loadLivekitConfig(config);
 
 		// Load IRC config (from irc.js)
 		loadIrcConfig(config);
@@ -160,7 +161,7 @@ async function loadConfig() {
 
 async function loadCaptcha() {
 	try {
-		const res = await fetch('/api/captcha');
+		const res = await fetch('api/captcha');
 		const data = await res.json();
 		state.captchaId = data.id;
 		$('captcha-question').textContent = data.question + ' = ?';
@@ -172,7 +173,7 @@ async function loadCaptcha() {
 
 async function loadUserCount() {
 	try {
-		const res = await fetch('/api/users/count');
+		const res = await fetch('api/users/count');
 		const data = await res.json();
 		const count = data.count || 0;
 		const el = $('user-count-home');
@@ -212,6 +213,12 @@ async function connect() {
 	}
 	if (!captchaAnswer) return $('captcha-answer').focus();
 
+	// Calls are end-to-end encrypted (e2ee.js) and never fall back to plaintext.
+	if (!LivekitClient.isE2EESupported()) {
+		showError('This browser does not support end-to-end encrypted calls. Use a current Chrome, Edge, Firefox or Safari.');
+		return;
+	}
+
 	state.username = username;
 	$('login-error').classList.add('hidden');
 
@@ -244,7 +251,8 @@ async function connect() {
 
 function connectWebSocket(username, captchaId, captchaAnswer) {
 	const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-	state.ws = new WebSocket(`${protocol}//${location.host}/ws`);
+	// Relative to the page so the app also works under a path prefix (e.g. /beta/).
+	state.ws = new WebSocket(`${protocol}//${location.host}${location.pathname.replace(/[^/]*$/, '')}ws`);
 
 	state.ws.onopen = () => {
 		state.wsReconnectAttempts = 0; // Reset on successful connection
@@ -288,6 +296,9 @@ function connectWebSocket(username, captchaId, captchaAnswer) {
 		// Don't reconnect if we're on the login screen
 		if (!$('login-screen').classList.contains('hidden')) return;
 
+		// The server drops our media session along with this client id; leave it cleanly
+		// now. The rejoin ('users') starts a new one.
+		disconnectLivekit();
 		attemptReconnect();
 	};
 
@@ -322,25 +333,15 @@ function handleSignal(data) {
 			break;
 
 		case 'users':
-			// If reconnecting, clean up existing peers first
+			// If reconnecting, clean up existing peers first (connectLivekit below also
+			// replaces the old media session, since our client id changed)
 			if (state.myId) {
-				console.log('[WS] Reconnected - cleaning up old peer connections');
-				Object.keys(state.peers).forEach((id) => {
-					teardownPeerAudio(id);
-					const peer = state.peers[id];
-					if (peer) {
-						if (peer.connectionTimeout) clearTimeout(peer.connectionTimeout);
-						if (peer.statsInterval) clearInterval(peer.statsInterval);
-						try { peer.pc.close(); } catch (e) {}
-					}
-				});
-				state.peers = {};
+				console.log('[WS] Reconnected - cleaning up old peers');
+				Object.keys(state.peers).forEach(removePeer);
 				// Clear remote users but preserve local
 				const localUser = state.users['local'];
 				state.users = {};
 				if (localUser) state.users['local'] = localUser;
-				// Clear pending candidates
-				Object.keys(pendingCandidates).forEach(k => delete pendingCandidates[k]);
 			}
 
 			state.myId = data.you;
@@ -380,13 +381,14 @@ function handleSignal(data) {
 					audioOnly: !!user.audio_only,
 					speaking: false
 				};
-				createPeerConnection(user.id, user.username, true);
+				ensurePeer(user.id, user.username);
 			});
 
 			updateUI();
 
-			// If we joined with car mode on (persisted setting), tell peers to stop
-			// sending us video and apply our local audio-only shaping.
+			connectLivekit(data.livekit_token).catch(e => console.error('[LiveKit] Connect failed:', e?.message || e));
+
+			// If we joined with car mode on (persisted setting), apply audio-only.
 			if (state.settings.carMode && typeof applyCarMode === 'function') applyCarMode();
 			if (!state.timerStarted) {
 				startTimer();
@@ -400,19 +402,6 @@ function handleSignal(data) {
 			if (state.settings.notifications) {
 				requestNotificationPermission();
 			}
-
-			// Run TURN connectivity test in background (results shown in debug panel)
-			if (typeof testTurnServer === 'function') {
-				testTurnServer().then(result => {
-					if (!result.success) {
-						console.error('[TURN] TURN server test failed - connections may not work properly');
-					} else {
-						console.log(`[TURN] Server OK: relay in ${result.relayCandidateTime}ms, ${result.candidateCount} candidates`);
-					}
-				}).catch(e => {
-					console.error('[TURN] TURN test error:', e?.message || e);
-				});
-			}
 			break;
 
 		case 'user_joined':
@@ -424,6 +413,7 @@ function handleSignal(data) {
 				breakout: false,
 				speaking: false
 			};
+			ensurePeer(data.id, data.username);
 			console.log('[Signal] user_joined:', data.id, 'micOn:', data.mic_on, 'state:', state.users[data.id]);
 			updateUI();
 
@@ -442,23 +432,16 @@ function handleSignal(data) {
 		case 'user_left':
 			const leftUsername = state.users[data.id]?.username || 'Someone';
 
-			// Immediately remove the user
-			if (state.peers[data.id]) {
-				teardownPeerAudio(data.id);
-				if (state.peers[data.id].connectionTimeout) clearTimeout(state.peers[data.id].connectionTimeout);
-				if (state.peers[data.id].statsInterval) clearInterval(state.peers[data.id].statsInterval);
-				try { state.peers[data.id].pc.close(); } catch (e) {}
-				delete state.peers[data.id];
-			}
+			// Immediately remove the user, and rotate our E2EE sender key so they can't
+			// decrypt anything we send from now on
+			removePeer(data.id);
 			delete state.users[data.id];
-			delete pendingCandidates[data.id];
+			rotateE2EEOnLeave(data.id);
 
 			if (state.maximizedPeer === data.id) {
 				state.maximizedPeer = null;
 			}
 
-			// Fewer peers = bigger per-peer share of the camera upload budget.
-			applyVideoBitrateCap();
 			updateUI();
 
 			// Notification and sound
@@ -466,18 +449,8 @@ function handleSignal(data) {
 			playSound('leave');
 			break;
 
-		case 'offer':
-			state.users[data.from] = state.users[data.from] || { username: data.username, camOn: false, micOn: true, screenOn: false, speaking: false };
-			handleOffer(data.from, data.username, data.sdp);
-			updateUI();
-			break;
-
-		case 'answer':
-			handleAnswer(data.from, data.sdp);
-			break;
-
-		case 'candidate':
-			handleCandidate(data.from, data.candidate);
+		case 'e2ee':
+			handleE2EEMessage(data.from, data.payload);
 			break;
 
 		case 'camera_status':
@@ -591,9 +564,8 @@ function handleSignal(data) {
 			break;
 
 		case 'car_mode_status':
+			// Informational only: a car-mode user unsubscribes from video on their own end.
 			if (state.users[data.id]) state.users[data.id].audioOnly = !!data.audio_only;
-			// Stop / resume the video+screen we send to this peer.
-			applyAudioOnlyGatingForPeer(data.id);
 			break;
 
 		case 'fed_status':
@@ -632,8 +604,8 @@ function handleSignal(data) {
 // ========== BREAKOUT ROOM (*87#) ==========
 //
 // Per-user flag gates audio in both directions: if your breakout matches a peer's,
-// you can hear each other. If not, both sides mute the relevant sender track and
-// <audio> element. No video/screenshare while in breakout - we force-disable yours
+// you can hear each other. If not, both sides unsubscribe from each other's tracks at
+// the SFU and mute the <audio> element. No video/screenshare while in breakout - we force-disable yours
 // when you enter. Anyone in main lobby sees breakout users as muted (their audio
 // gating already produces silence on this end). Not a security boundary - a
 // determined client could re-enable everything locally.
@@ -660,6 +632,7 @@ function handleBreakoutStatus(userId, inBreakout) {
 
 // Recomputes per-peer audio gating against the local breakout flag.
 function applyBreakoutGatingAll() {
+	syncOutgoingAudio();
 	Object.keys(state.peers).forEach(applyBreakoutGatingForPeer);
 }
 
@@ -670,24 +643,8 @@ function applyBreakoutGatingForPeer(peerId) {
 	const theirBreakout = !!state.users[peerId]?.breakout;
 	const canHear = myBreakout === theirBreakout;
 
-	// Outgoing: when our breakout state doesn't match this peer, swap the audio
-	// sender's track for null so they receive silence. track.enabled would mute the
-	// mic for every peer because the underlying MediaStreamTrack is shared. This
-	// way the regular mic on/off (toggleMic) still works for matching peers.
-	// getOutgoingAudioTrack() (audiofx.js) returns the voice-changer's processed track
-	// when active, else the raw mic - so it's the single source of truth for what we send.
-	const localAudioTrack = (typeof getOutgoingAudioTrack === 'function')
-		? getOutgoingAudioTrack()
-		: (state.localStream?.getAudioTracks()[0] || null);
-	const targetTrack = canHear ? localAudioTrack : null;
-	if (peer.audioSender) {
-		// replaceTrack is transparent (no renegotiation needed). Avoid redundant calls.
-		if (peer.audioSender.track !== targetTrack) {
-			peer.audioSender.replaceTrack(targetTrack).catch(e => {
-				console.warn(`[Breakout] replaceTrack failed for ${peerId}:`, e?.message || e);
-			});
-		}
-	}
+	// What we receive from them is gated at the SFU (livekit.js applySubscription).
+	applySubscriptionsFor(peerId);
 
 	// Incoming: mute their <audio> element on our side. Per-user volume 0 is also applied
 	// via .muted because iOS ignores audio.volume (read-only, always 1).
@@ -703,16 +660,12 @@ function applyBreakoutGatingForPeer(peerId) {
 
 // ========== CAR MODE (audio-only) ==========
 //
-// Applied from the settings toggle (and re-applied on join if persisted on). Three parts:
-//  1. We broadcast car_mode so every OTHER client pauses the video/screen they send us.
+// Applied from the settings toggle (and re-applied on join if persisted on):
+//  1. We unsubscribe from every video and screen track at the SFU, so none is sent to us.
 //  2. Locally we hide all video (updateVideoGrid short-circuits on state.settings.carMode)
 //     and suppress visual dial effects + their sounds.
-//  3. We cap our own outgoing audio bitrate low.
-// Pausing peers' outbound video to us is done via RTCRtpSender encodings.active=false
-// (setParameters) - transparent, no renegotiation, and it never touches the track so it
-// can't collide with the camera on/off pipeline.
-
-const CARMODE_AUDIO_BITRATE = 24000; // ~24 kbps opus - plenty for intelligible speech
+//  3. We re-publish our mic with a low bitrate cap.
+// car_mode is still broadcast so other clients know (state.users[id].audioOnly).
 
 function applyCarMode() {
 	const on = !!state.settings.carMode;
@@ -721,32 +674,9 @@ function applyCarMode() {
 	if (typeof setTrippyMode === 'function') setTrippyMode(state.trippyMode);
 	if (typeof setSchizoMode === 'function') setSchizoMode(state.schizoMode);
 	if (typeof setPongMode === 'function') setPongMode(state.pongMode);
-	applyCarModeAudioBitrate();
+	applySubscriptionsAll();
+	republishMic().catch(e => console.warn('[CarMode] Mic re-publish failed:', e?.message || e));
 	updateUI();
-}
-
-// Cap (or uncap) our outgoing audio bitrate on every peer when we're in car mode.
-function applyCarModeAudioBitrate() {
-	const cap = state.settings.carMode ? CARMODE_AUDIO_BITRATE : undefined;
-	Object.values(state.peers).forEach(peer => {
-		if (!peer.audioSender) return;
-		updateSenderParams(peer.audioSender, enc => { enc.maxBitrate = cap; }, 'CarMode');
-	});
-}
-
-// Pause/resume the video+screen RTP we send to a peer based on THEIR car-mode flag.
-function applyAudioOnlyGatingForPeer(peerId) {
-	const peer = state.peers[peerId];
-	if (!peer || !peer.pc) return;
-	const peerAudioOnly = !!state.users[peerId]?.audioOnly;
-	peer.pc.getSenders().forEach(sender => {
-		if (!sender.track || sender.track.kind !== 'video') return;
-		updateSenderParams(sender, enc => { enc.active = !peerAudioOnly; }, 'CarMode');
-	});
-}
-
-function applyAudioOnlyGatingAll() {
-	Object.keys(state.peers).forEach(applyAudioOnlyGatingForPeer);
 }
 
 // ========== TIMER ==========
@@ -889,7 +819,7 @@ function handlePageLeave() {
 	if (state.myId) {
 		try {
 			const data = new Blob([JSON.stringify({ client_id: state.myId })], { type: 'application/json' });
-			navigator.sendBeacon('/api/leave', data);
+			navigator.sendBeacon('api/leave', data);
 		} catch (e) {
 			// Fallback to WebSocket if sendBeacon fails
 			if (state.ws?.readyState === WebSocket.OPEN) {
@@ -903,12 +833,10 @@ function handlePageLeave() {
 	}
 
 	clearPersistentLocalVideos();
+	disconnectLivekit();
 	state.localStream?.getTracks().forEach(t => t.stop());
 	state.screenStream?.getTracks().forEach(t => t.stop());
-	Object.keys(state.peers).forEach(id => {
-		teardownPeerAudio(id);
-		try { state.peers[id].pc.close(); } catch (e) {}
-	});
+	Object.keys(state.peers).forEach(teardownPeerAudio);
 	if (state.audioPrimer) {
 		state.audioPrimer.srcObject = null;
 		state.audioPrimer.remove();
