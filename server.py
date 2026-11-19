@@ -500,6 +500,15 @@ async def handle_message(client_id: str, data: dict):
 			'screen_on': clients[client_id].get('screen_on', False)
 		})
 
+	elif msg_type == 'livekit_token':
+		# Fresh token to rejoin the media room after LiveKit dropped our session
+		if clients[client_id]['username']:
+			await clients[client_id]['ws'].send_json({'type': 'livekit_token', 'token': livekit_token(client_id, clients[client_id]['username'])})
+
+	elif msg_type == 'diag':
+		if config.DIAG_LOGS:
+			logging.info(f'[{client_id}] DIAG {clients[client_id]["username"]}: {str(data.get("line"))[:1000]}')
+
 	elif msg_type == 'e2ee':
 		# End-to-end encryption key exchange. Payloads are public keys and sender keys
 		# sealed to one recipient, so the server only relays them. No target = everyone.

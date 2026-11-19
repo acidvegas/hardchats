@@ -41,6 +41,7 @@ docker run -d --name ${HC_NAME} --restart unless-stopped --user 10001:10001 -p 1
   -e IRC_PORT=${IRC_PORT} \
   -e IRC_CHANNEL=${IRC_CHANNEL} \
   -e IRCBOT_ENABLED=${IRCBOT_ENABLED:-1} \
+  -e DIAG_LOGS=${DIAG_LOGS:-0} \
   -e LIVEKIT_URL=${LIVEKIT_URL} \
   -e LIVEKIT_API_URL=http://172.17.0.1:7880 \
   -e LIVEKIT_API_KEY=${LIVEKIT_API_KEY} \
