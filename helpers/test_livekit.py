@@ -128,6 +128,17 @@ async def list_participants() -> list:
 	return json.loads(await remote_python(code)).get('participants', [])
 
 
+async def remove_participant(identity: str):
+	'''Kick a media session from the SFU, the way LiveKit drops a client whose connection died'''
+	code = '\n'.join([
+		'import json, urllib.request, server',
+		"token = server.livekit_jwt({'video': {'room': 'hardchats', 'roomAdmin': True}}, 60)",
+		f"req = urllib.request.Request('http://172.17.0.1:7880/twirp/livekit.RoomService/RemoveParticipant', data=json.dumps({{'room': 'hardchats', 'identity': {identity!r}}}).encode(), headers={{'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'}})",
+		'print(urllib.request.urlopen(req, timeout=10).read().decode())'
+	])
+	return await remote_python(code)
+
+
 async def new_client(browser, name: str, extra_init: str = None):
 	if browser.browser_type.name == 'firefox':
 		ctx = await browser.new_context() # Firefox keeps its own UA (a Chrome UA would make sites treat it as Chrome)
@@ -352,6 +363,15 @@ async def main():
 			await alice.evaluate("send({ type: 'play_soundboard', sound: 'knock' })")
 			await bob.wait_for_function("window.gotSound === 'knock'", timeout=10000)
 			check('soundboard: bob gets the sound alice picked', True)
+
+		if want('drop'):
+			# LiveKit drops alice's media session while her app WebSocket stays up: she must rejoin on her own
+			await remove_participant(A)
+			await alice.wait_for_function("state.room && state.room.state === 'connected' && state.micPub", timeout=20000)
+			s, ok = await wait_stats(bob, f"(s['{A}']||[]).some(t => t.source === 'microphone' && t.subscribed && t.energy > 0.01)")
+			check('after LiveKit drops alice she rejoins the media room and bob hears her', ok, json.dumps(find(s, A, 'microphone')))
+			_, ok = await wait_stats(alice, f"(s['{B}']||[]).some(t => t.source === 'microphone' && t.subscribed && t.energy > 0.01)")
+			check('rejoined alice hears bob again', ok)
 
 		if want('ui'):
 			await bob.click('#debug-btn')

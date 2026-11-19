@@ -32,6 +32,9 @@ LIVEKIT_ROOM       = 'hardchats'
 LIVEKIT_TOKEN_TTL  = 600 # seconds, only used for the initial connect (LiveKit refreshes it while connected)
 E2EE_MAX_PAYLOAD   = 2048 # bytes, cap on relayed key-exchange messages
 
+# Client diagnostics: browsers stream their media/E2EE logs + receive stats to the server log (DIAG_LOGS=1)
+DIAG_LOGS = os.getenv('DIAG_LOGS', '0') == '1'
+
 
 # IRC settings
 IRC_SERVER          = f'wss://{os.getenv('IRC_SERVER')}:{os.getenv('IRC_PORT')}'
@@ -66,6 +69,7 @@ def get_client_config():
 		'max_users'   : MAX_USERS,
 		'max_cameras' : MAX_CAMERAS,
 		'livekit_url' : LIVEKIT_URL,
+		'diag_logs'   : DIAG_LOGS,
 		'irc': {
 			'server'          : IRC_SERVER,
 			'channel'         : IRC_CHANNEL,

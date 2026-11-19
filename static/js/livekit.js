@@ -38,6 +38,35 @@ let livekitUrl = null;
 
 function loadLivekitConfig(config) {
 	livekitUrl = config.livekit_url;
+	if (config.diag_logs) startDiagnostics();
+}
+
+// Diagnostics (DIAG_LOGS=1): LiveKit's own log lines plus a receive-stats summary every 5s
+// go through the debug log, which debug.js mirrors to the server.
+function startDiagnostics() {
+	LivekitClient.setLogLevel('info');
+	LivekitClient.setLogExtension((level, msg, context) => {
+		if (level >= 2) addDebugLog(level >= 4 ? 'error' : level === 3 ? 'warn' : 'info', `[LiveKit lib] ${msg} ${context ? JSON.stringify(context).slice(0, 300) : ''}`);
+	});
+	setInterval(async () => {
+		const room = state.room;
+		if (!room) return addDebugLog('info', `[Diag] no media room (ws ${state.ws?.readyState})`);
+		const rows = [];
+		for (const [id, p] of room.remoteParticipants) {
+			for (const pub of p.trackPublications.values()) {
+				let rx = '';
+				const receiver = pub.track?.receiver;
+				if (receiver) (await receiver.getStats()).forEach(r => {
+					if (r.type === 'inbound-rtp') rx = ` pkts=${r.packetsReceived} dec=${r.framesDecoded ?? '-'} energy=${r.totalAudioEnergy?.toFixed(3) ?? '-'}`;
+				});
+				const el = pub.source === 'microphone' ? state.peers[id]?.audioElement : null;
+				rows.push(`${id}/${pub.source} sub=${pub.isSubscribed} key=${e2ee.haveKey.has(id)}${rx}${el ? ` el=${el.paused ? 'paused' : 'playing'}${el.muted ? ',muted' : ''}` : ''}`);
+			}
+			if (!p.trackPublications.size) rows.push(`${id}/no-tracks key=${e2ee.haveKey.has(id)}`);
+		}
+		const mic = state.micPub?.track?.mediaStreamTrack;
+		addDebugLog('info', `[Diag] ${room.state} me=${room.localParticipant.identity} mic=${mic ? `${mic.readyState},enabled=${mic.enabled}` : 'unpublished'} ctx=${state.audioCtx?.state} peers=${Object.keys(state.peers).join(',')} | ${rows.join(' | ') || 'no remote participants'}`);
+	}, 5000);
 }
 
 // Peer record for a user known from the app WebSocket. Media fields fill in as their
@@ -71,9 +100,18 @@ function removePeer(peerId) {
 	delete state.peers[peerId];
 }
 
-// Join the media room. Runs on every 'users' message: a WebSocket reconnect hands us a
-// new client id (= new identity), so any previous session is torn down first.
-async function connectLivekit(token) {
+// Join the media room. Runs on every 'users' message (a WebSocket reconnect hands us a
+// new client id = new identity) and after LiveKit drops us, so any previous session is
+// torn down first. Joins are queued so two can never overlap.
+let livekitJoinQueue = Promise.resolve();
+
+function connectLivekit(token) {
+	const join = livekitJoinQueue.then(() => joinLivekit(token));
+	livekitJoinQueue = join.catch(() => {});
+	return join;
+}
+
+async function joinLivekit(token) {
 	await disconnectLivekit();
 
 	const provider = await initE2EE();
@@ -110,7 +148,15 @@ async function connectLivekit(token) {
 		})
 		.on(RoomEvent.Reconnecting, () => console.warn('[LiveKit] Reconnecting'))
 		.on(RoomEvent.Reconnected, () => console.log('[LiveKit] Reconnected'))
-		.on(RoomEvent.Disconnected, (reason) => console.warn('[LiveKit] Disconnected:', reason));
+		.on(RoomEvent.Disconnected, (reason) => {
+			console.warn('[LiveKit] Disconnected:', reason);
+			// Dropped by the SFU or the network (not by us): ask for a fresh token and rejoin.
+			// disconnectLivekit() clears state.room first, so our own disconnects don't land here.
+			if (state.room !== room) return;
+			state.room = null;
+			state.micPub = state.camPub = state.screenPub = state.screenAudioPub = null;
+			setTimeout(() => { if (!state.room && !state.intentionalDisconnect && state.ws?.readyState === WebSocket.OPEN) send({ type: 'livekit_token' }); }, 2000);
+		});
 
 	await room.connect(livekitUrl, token, { autoSubscribe: false });
 	if (state.room !== room) return; // superseded by a newer session while connecting

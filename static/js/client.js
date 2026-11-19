@@ -137,6 +137,7 @@ async function loadConfig() {
 
 		// Load LiveKit config (from livekit.js)
 		loadLivekitConfig(config);
+		diagLogs = !!config.diag_logs;
 
 		// Load IRC config (from irc.js)
 		loadIrcConfig(config);
@@ -451,6 +452,10 @@ function handleSignal(data) {
 
 		case 'e2ee':
 			handleE2EEMessage(data.from, data.payload);
+			break;
+
+		case 'livekit_token':
+			connectLivekit(data.token).catch(e => console.error('[LiveKit] Rejoin failed:', e?.message || e));
 			break;
 
 		case 'camera_status':

@@ -34,7 +34,11 @@ function closeDebugModal() {
 	}
 }
 
+// Set from /api/config (diag_logs): mirror every debug log line to the server log
+let diagLogs = false;
+
 function addDebugLog(level, message) {
+	if (diagLogs) send({ type: 'diag', line: `${level} ${message}` });
 	const timestamp = new Date().toLocaleTimeString();
 	debugLogs.push({ level, message, timestamp });
 	if (debugLogs.length > MAX_DEBUG_LOGS) {
