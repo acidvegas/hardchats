@@ -17,7 +17,7 @@ except ImportError:
 	raise SystemExit('missing playwright library (pip install playwright && playwright install chromium)')
 
 
-BASE       = 'https://hardchats.com/beta/'
+BASE       = 'https://hardchats.com/'
 SSH_HOST   = 'super-svc'
 CONTAINER  = 'hardchats-beta'
 SFU_IPS    = ('69.30.206.130', '2604:4300:a:282:')
@@ -232,7 +232,8 @@ async def main():
 			eve = await ctx.new_page()
 			await eve.goto(BASE + 'api/config')
 			await eve.add_script_tag(url=BASE + 'static/js/vendor/livekit-client.umd.js')
-			await eve.evaluate("async (t) => { window.evil = new LivekitClient.Room(); await window.evil.connect('wss://hardchats.com/beta/lk', t, { autoSubscribe: true }); }", token)
+			lk_url = await alice.evaluate('livekitUrl')
+			await eve.evaluate("async ([u, t]) => { window.evil = new LivekitClient.Room(); await window.evil.connect(u, t, { autoSubscribe: true }); }", [lk_url, token])
 			s, _ = await wait_stats(eve, f"(s['{A}']||[]).some(t => t.source === 'camera' && t.packets > 100) && (s['{A}']||[]).some(t => t.source === 'microphone' && t.packets > 100)", room_var='evil')
 			cam = find(s, A, 'camera')
 			check('eavesdropper gets alice camera packets but decodes 0 frames', cam.get('packets', 0) > 100 and not cam.get('framesDecoded'), json.dumps(cam))
