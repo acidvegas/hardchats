@@ -2201,37 +2201,78 @@ body.pong-mode.schizo-mode .video-tile video {
 
 /* ========== DIAL CODES LIST (*#06#) ========== */
 
+.modal-content.dial-codes-modal {
+	max-width: 560px;
+	display: flex;
+	flex-direction: column;
+}
+
 .dial-codes-list {
 	list-style: none;
 	margin: 0;
-	padding: 0.5rem 0;
-	display: flex;
-	flex-direction: column;
-	gap: 0.5rem;
-	max-height: 60vh;
+	padding: 0;
+	background: var(--bg-primary);
+	border: 1px solid var(--border);
+	border-radius: 8px;
 	overflow-y: auto;
+	min-height: 0;
 }
 
 .dial-codes-list li {
-	display: flex;
-	align-items: baseline;
+	display: grid;
+	grid-template-columns: 4.75rem 1fr auto;
+	align-items: center;
 	gap: 0.75rem;
-	padding: 0.5rem 0.75rem;
-	background: var(--bg-primary);
-	border: 1px solid var(--border);
-	border-radius: 6px;
+	padding: 0.55rem 0.85rem;
+}
+
+.dial-codes-list li + li {
+	border-top: 1px solid var(--border);
+}
+
+.dial-codes-list li:hover {
+	background: var(--acid-subtle);
 }
 
 .dial-codes-list code {
 	font-family: 'JetBrains Mono', monospace;
-	color: var(--acid);
-	min-width: 5.5rem;
+	font-size: 0.9rem;
 	font-weight: 600;
+	color: var(--acid);
 }
 
-.dial-codes-list span {
+.dial-code-desc {
 	color: var(--text-primary);
 	font-size: 0.85rem;
+	line-height: 1.35;
+}
+
+.dial-code-scope {
+	font-size: 0.68rem;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	white-space: nowrap;
+	padding: 0.15rem 0.45rem;
+	border-radius: 999px;
+	border: 1px solid var(--border-light);
+	color: var(--text-muted);
+}
+
+.dial-code-scope.everyone {
+	border-color: var(--acid-dim);
+	color: var(--acid);
+}
+
+@media (max-width: 480px) {
+	.dial-codes-list li {
+		grid-template-columns: 4.25rem 1fr auto;
+		gap: 0.5rem;
+		padding: 0.5rem 0.65rem;
+	}
+
+	.dial-code-desc {
+		font-size: 0.8rem;
+	}
 }
 
 /* ========== RECORD CALL prank button ========== */
