@@ -35,6 +35,9 @@ docker run -d \
   --config-body "$(sed "s/PUBLIC_IP6/${PUBLIC_IP6}/g; s/PUBLIC_IP/${PUBLIC_IP}/g" livekit.yaml)" \
   --node-ip ${PUBLIC_IP},${PUBLIC_IP6}
 
+# NickServ password for the IRC bot, kept on the host so it survives rebuilds (the bot runs as uid 10001 and writes it after registering)
+[ -f nickserv-hardchats.txt ] || { install -m 600 /dev/null nickserv-hardchats.txt && sudo chown 10001:10001 nickserv-hardchats.txt; }
+
 # Run hardchats container
 docker run -d --name ${HC_NAME} --restart unless-stopped --user 10001:10001 -p 127.0.0.1:${HC_PORT}:58080 \
   -e IRC_SERVER=${IRC_SERVER} \
@@ -49,4 +52,5 @@ docker run -d --name ${HC_NAME} --restart unless-stopped --user 10001:10001 -p 1
   -e LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET} \
   -e ZULIP_BOT_EMAIL=${ZULIP_BOT_EMAIL} \
   -e ZULIP_BOT_KEY=${ZULIP_BOT_KEY} \
+  -v "$PWD/nickserv-hardchats.txt:/app/nickserv-hardchats.txt" \
   ${HC_NAME}
