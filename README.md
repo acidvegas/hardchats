@@ -71,7 +71,7 @@ docker run --rm livekit/livekit-server:v1.13.11 generate-keys   # put the pair i
 | `ZULIP_BOT_EMAIL`    | Zulip bot email for join / leave announcements (optional)            |
 | `ZULIP_BOT_KEY`      | Zulip bot key, leave empty to disable                                |
 | `DIAG_LOGS`          | `1` streams every browser's media & E2EE debug log to the server log |
-| `FOOTER_NOTICE`      | Optional HTML shown in the footer next to the version                |
+| `LOGIN_NOTICE`       | Optional HTML shown under the connect button                         |
 
 `livekit.yaml` uses `hardchats.com` as the TURN domain and certificate path. Change it if you host under another domain.
 
