@@ -2,6 +2,7 @@
 // Requires: state, $, send from state.js
 // Requires: setupLocalAudioAnalyser from webrtc.js (at runtime)
 // Requires: updateUI from ui.js (at runtime)
+// Requires: replaceCamera, unpublishCamera, republishCamera from livekit.js (at runtime)
 // Requires: syncNotificationPermission, requestNotificationPermission from notifications.js (at runtime)
 
 // ========== LOCAL STORAGE ==========
@@ -316,22 +317,14 @@ async function applySettings() {
 			// Apply mute state
 			newAudioTrack.enabled = state.micEnabled;
 
-			// Replace in all peer connections
-			for (const peer of Object.values(state.peers)) {
-				const sender = peer.pc.getSenders().find(s => s.track && s.track.kind === 'audio');
-				if (sender) {
-					await sender.replaceTrack(newAudioTrack);
-				}
-			}
-
 			// Rebuild the local analyser onto the new mic track. setupLocalAudioAnalyser
 			// disconnects the old source itself; we never close the shared AudioContext
 			// (it's reused across peers and across mic switches).
 			setupLocalAudioAnalyser();
 
 			// If the voice-changer graph is active, rebuild its source onto the new mic
-			// track, then push the correct outgoing track (processed or raw) to every
-			// sender via the normal gating path. No-op when the graph is inactive.
+			// track, then push the correct outgoing track (processed or raw) to the
+			// published mic via the normal gating path.
 			if (typeof rebuildVoiceFxSource === 'function') rebuildVoiceFxSource();
 			if (typeof applyBreakoutGatingAll === 'function') applyBreakoutGatingAll();
 
@@ -364,19 +357,8 @@ async function applySettings() {
 				const newVideoTrack = newVideoStream.getVideoTracks()[0];
 				state.localStream.addTrack(newVideoTrack);
 
-				// Replace or add in all peer connections
-				for (const [peerId, peer] of Object.entries(state.peers)) {
-					const sender = peer.pc.getSenders().find(s => s.track && s.track.kind === 'video' && s !== peer.screenSender);
-					if (sender) {
-						await sender.replaceTrack(newVideoTrack);
-					} else {
-						peer.pc.addTrack(newVideoTrack, state.localStream);
-						// Renegotiate
-						const offer = await peer.pc.createOffer();
-						await peer.pc.setLocalDescription(offer);
-						send({ type: 'offer', target: peerId, sdp: offer.sdp });
-					}
-				}
+				// Replace the published camera, or publish it if it wasn't on
+				await replaceCamera(newVideoTrack);
 
 				if (!state.camEnabled) {
 					state.camEnabled = true;
@@ -385,9 +367,6 @@ async function applySettings() {
 					$('cam-btn').classList.add('active');
 				}
 
-				applyVideoBitrateCap();
-				if (typeof applyAudioOnlyGatingAll === 'function') applyAudioOnlyGatingAll();
-
 				console.log('[Settings] Camera switched');
 			} catch (e) {
 				console.error('[Settings] Failed to switch camera:', e);
@@ -395,19 +374,9 @@ async function applySettings() {
 			}
 		} else if (currentVideoTrack) {
 			// Want camera off
+			await unpublishCamera();
 			currentVideoTrack.stop();
 			state.localStream.removeTrack(currentVideoTrack);
-
-			for (const [peerId, peer] of Object.entries(state.peers)) {
-				const sender = peer.pc.getSenders().find(s => s.track && s.track.kind === 'video' && s !== peer.screenSender);
-				if (sender) {
-					peer.pc.removeTrack(sender);
-					// Renegotiate
-					const offer = await peer.pc.createOffer();
-					await peer.pc.setLocalDescription(offer);
-					send({ type: 'offer', target: peerId, sdp: offer.sdp });
-				}
-			}
 
 			state.camEnabled = false;
 			state.users['local'].camOn = false;
@@ -516,41 +485,15 @@ function getVideoConstraints() {
 // so shared text stays legible.
 const LOWBW_VIDEO_BITRATE = 300000;
 
-// Adaptive camera bitrate: in a full mesh every peer gets its own encode of our camera,
-// so upload grows with the room. Split this total budget across peers (with a floor) so
-// big rooms don't saturate the uplink. Shares at or above the browser's own ~2.5 Mbps
-// default leave the sender uncapped, so small rooms behave exactly as before.
-const ADAPTIVE_VIDEO_UPLOAD_BUDGET = 6000000;
-const ADAPTIVE_VIDEO_MIN_BITRATE   = 250000;
-const ADAPTIVE_VIDEO_UNCAPPED_AT   = 2500000;
-
-// Cap (or uncap) the outgoing camera bitrate on every peer's video sender. setParameters
-// is transparent (no renegotiation) and safe to call repeatedly; screen-share senders
-// (peer.screenSender) are skipped. Called on toggle and whenever a camera sender is
-// (re)created or a peer connects.
-function applyVideoBitrateCap() {
-	const share = Math.floor(ADAPTIVE_VIDEO_UPLOAD_BUDGET / Math.max(1, Object.keys(state.peers).length));
-	const adaptive = share >= ADAPTIVE_VIDEO_UNCAPPED_AT ? undefined : Math.max(ADAPTIVE_VIDEO_MIN_BITRATE, share);
-	const cap = state.settings.lowBandwidth ? Math.min(LOWBW_VIDEO_BITRATE, adaptive ?? Infinity) : adaptive;
-	Object.values(state.peers).forEach(peer => {
-		if (!peer.pc) return;
-		peer.pc.getSenders().forEach(sender => {
-			if (!sender.track || sender.track.kind !== 'video') return;
-			if (peer.screenSender && sender === peer.screenSender) return;
-			updateSenderParams(sender, enc => { enc.maxBitrate = cap; }, 'LowBW');
-		});
-	});
-}
-
-// Apply low-bandwidth mode to live video: shrink the current camera track in place (no
-// renegotiation) and (re)apply the outgoing bitrate ceiling.
+// Apply low-bandwidth mode to live video: shrink the current camera track in place and
+// re-publish it with (or without) the outgoing bitrate ceiling.
 function applyLowBandwidth() {
 	const videoTrack = state.localStream?.getVideoTracks()[0];
 	if (videoTrack) {
 		videoTrack.applyConstraints(getVideoConstraints())
 			.catch(e => console.warn('[LowBW] applyConstraints failed:', e?.message || e));
 	}
-	applyVideoBitrateCap();
+	republishCamera().catch(e => console.warn('[LowBW] Camera re-publish failed:', e?.message || e));
 }
 
 // Settings modal event listeners

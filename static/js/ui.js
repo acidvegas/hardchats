@@ -441,6 +441,8 @@ window.togglePeerVideo = function (peerId) {
 	if (!peer) return;
 
 	peer.videoOff = !peer.videoOff;
+	// Hidden video isn't just hidden: we stop receiving it from the SFU.
+	applySubscriptionsFor(peerId);
 
 	if (state.maximizedPeer === peerId && peer.videoOff) {
 		state.maximizedPeer = null;

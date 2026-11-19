@@ -1,6 +1,6 @@
 // HardChats - Debug Panel & Logging
-// Requires: state, $, escapeHtml, pendingCandidates from state.js
-// Requires: TURN_CONFIG, turnTestResult from turn.js (at runtime)
+// Requires: state, $, escapeHtml from state.js
+// Requires: livekitUrl from livekit.js, e2ee from e2ee.js (at runtime)
 
 const debugLogs = [];
 const MAX_DEBUG_LOGS = 500;
@@ -34,7 +34,21 @@ function closeDebugModal() {
 	}
 }
 
+// Set from /api/config (diag_logs): mirror every debug log line to the server log. Lines
+// logged while the WebSocket is down are queued and sent once it reconnects.
+let diagLogs = false;
+const diagQueue = [];
+
+function flushDiag() {
+	while (diagQueue.length && state.ws?.readyState === WebSocket.OPEN) send({ type: 'diag', line: diagQueue.shift() });
+}
+
 function addDebugLog(level, message) {
+	if (diagLogs) {
+		diagQueue.push(`${new Date().toISOString().slice(11, 23)} ${level} ${message}`);
+		if (diagQueue.length > 300) diagQueue.shift();
+		flushDiag();
+	}
 	const timestamp = new Date().toLocaleTimeString();
 	debugLogs.push({ level, message, timestamp });
 	if (debugLogs.length > MAX_DEBUG_LOGS) {
@@ -74,31 +88,14 @@ function updateDebugInfo() {
 	const connInfo = $('debug-connection-info');
 	if (connInfo) {
 		const wsState = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'][state.ws?.readyState ?? 3];
-		const turnHost = TURN_CONFIG?.turn?.host || 'N/A';
-		const turnPort = TURN_CONFIG?.turn?.port || 'N/A';
-
-		// TURN test status
-		let turnStatus = 'Not tested';
-		if (typeof turnTestResult !== 'undefined' && turnTestResult) {
-			if (turnTestResult.success) {
-				turnStatus = `OK (relay in ${turnTestResult.relayCandidateTime}ms, ${turnTestResult.candidateCount} candidates, total ${turnTestResult.totalTime}ms)`;
-			} else if (turnTestResult.timedOut) {
-				turnStatus = `TIMEOUT (${turnTestResult.candidateCount} candidates, no relay after ${turnTestResult.totalTime}ms)`;
-			} else if (turnTestResult.error) {
-				turnStatus = `FAILED: ${turnTestResult.error}`;
-			} else {
-				turnStatus = `NO RELAY (${turnTestResult.candidateCount} candidates in ${turnTestResult.totalTime}ms)`;
-			}
-		}
-
+		const room = state.room;
 		connInfo.innerHTML = `My ID: ${state.myId || 'N/A'}
 Username: ${state.username || 'N/A'}
 WebSocket: ${wsState}
 WS Reconnect Attempts: ${state.wsReconnectAttempts}
 Reconnect Token: ${state.reconnectToken ? 'Yes' : 'No'}
-TURN Server: ${turnHost}:${turnPort}
-ICE Transport Policy: ${TURN_CONFIG?.iceTransportPolicy || 'N/A'}
-TURN Test: ${turnStatus}
+LiveKit: ${room?.state || 'N/A'} (${livekitUrl || 'N/A'})
+E2EE: ${room?.isE2EEEnabled ? `enabled, sending with key #${e2ee.keyIndex}` : 'disabled'}
 Mic Enabled: ${state.micEnabled}
 Cam Enabled: ${state.camEnabled}
 Screen Enabled: ${state.screenEnabled}
@@ -106,51 +103,21 @@ DEFCON Mode: ${state.defconMode}
 Connected Peers: ${Object.keys(state.peers).length}`;
 	}
 	
-	// Peers info - enhanced with ICE candidate types and route info
+	// Peers info - media room presence, subscriptions and encryption per track
 	const peersInfo = $('debug-peers-info');
 	if (peersInfo) {
 		const peerDetailsPromises = Object.entries(state.peers).map(async ([id, peer]) => {
-			const iceState = peer.pc?.iceConnectionState || 'N/A';
-			const iceGatherState = peer.pc?.iceGatheringState || 'N/A';
-			const sigState = peer.pc?.signalingState || 'N/A';
-			const connState = peer.pc?.connectionState || 'N/A';
 			const user = state.users[id];
+			const participant = state.room?.remoteParticipants.get(id);
+			const tracks = participant ? [...participant.trackPublications.values()].map(pub =>
+				`${pub.source}${pub.isSubscribed ? ' (subscribed)' : ''}${pub.isEncrypted ? ' [encrypted]' : ' [NOT ENCRYPTED]'}`).join(', ') : '';
 
-			// Get ICE candidate pair info (shows if using TURN relay, direct, etc.)
-			let routeInfo = 'N/A';
-			let localAddr = '', remoteAddr = '';
-			try {
-				if (peer.pc && (connState === 'connected' || iceState === 'connected' || iceState === 'completed')) {
-					const stats = await peer.pc.getStats();
-					stats.forEach(report => {
-						if (report.type === 'candidate-pair' && report.state === 'succeeded') {
-							let localType = '?', remoteType = '?', protocol = '?';
-							stats.forEach(s => {
-								if (s.id === report.localCandidateId) {
-									localType = s.candidateType || '?';
-									protocol = s.protocol || '?';
-									localAddr = `${s.address || '?'}:${s.port || '?'}`;
-								}
-								if (s.id === report.remoteCandidateId) {
-									remoteType = s.candidateType || '?';
-									remoteAddr = `${s.address || '?'}:${s.port || '?'}`;
-								}
-							});
-							routeInfo = `${localType} ↔ ${remoteType} (${protocol})`;
-						}
-					});
-				}
-			} catch (e) { /* stats unavailable */ }
-
-			return `${user?.username || id} [${peer.initiator ? 'initiator' : 'responder'}]:
-  Connection: ${connState}
-  ICE: ${iceState} | Gathering: ${iceGatherState} | Signaling: ${sigState}
-  Route: ${routeInfo}${localAddr ? `\n  Local: ${localAddr} → Remote: ${remoteAddr}` : ''}
-  ICE Restarts: ${peer.iceRestartCount || 0}
-  Buffered Candidates: ${pendingCandidates[id]?.length || 0}
+			return `${user?.username || id}:
+  LiveKit: ${participant ? 'in media room' : 'not in media room'} | Quality: ${peer.networkQuality || 'unknown'}
+  E2EE key exchanged: ${e2ee.wrapKeys.has(id) ? 'yes' : 'no'}
+  Tracks: ${tracks || 'none'}
   Has Stream: ${!!peer.stream} | Audio Tracks: ${peer.stream?.getAudioTracks()?.length ?? 0}
-  Mic: ${user?.micOn}, Cam: ${user?.camOn}, Screen: ${user?.screenOn}
-  RTT: ${peer.rtt ?? 'N/A'}ms, Loss: ${peer.packetLoss ?? 'N/A'}%, Jitter: ${peer.jitter ?? 'N/A'}ms`;
+  Mic: ${user?.micOn}, Cam: ${user?.camOn}, Screen: ${user?.screenOn}`;
 		});
 
 		Promise.all(peerDetailsPromises).then(details => {
@@ -169,7 +136,7 @@ const originalConsoleError = console.error;
 
 console.log = function(...args) {
 	const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
-	if (msg.includes('[WebRTC]') || msg.includes('[Signal]') || msg.includes('[Audio]') || msg.includes('[Mic]') || msg.includes('[WS]') || msg.includes('[TURN]') || msg.includes('[IRC]') || msg.includes('[Config]')) {
+	if (msg.includes('[WebRTC]') || msg.includes('[Signal]') || msg.includes('[Audio]') || msg.includes('[Mic]') || msg.includes('[WS]') || msg.includes('[LiveKit]') || msg.includes('[E2EE]') || msg.includes('[IRC]') || msg.includes('[Config]')) {
 		addDebugLog('info', msg);
 	}
 	originalConsoleLog.apply(console, args);
