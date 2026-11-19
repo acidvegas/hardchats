@@ -15,7 +15,7 @@ if os.path.exists('.env'):
 
 
 # Version
-VERSION = '1.0.10'
+VERSION = '1.0.11'
 
 # Server settings
 SERVER_HOST = '0.0.0.0'
