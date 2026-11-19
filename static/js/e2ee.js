@@ -37,8 +37,9 @@ const e2ee = {
 	provider: null,
 	keyPair: null,
 	publicKey: null,      // our raw P-256 public key, base64
-	senderKey: null,      // our current raw sender key (Uint8Array, 32 bytes)
+	senderKey: null,      // the raw sender key we encrypt with now (Uint8Array, 32 bytes)
 	keyIndex: 0,
+	pending: null,        // {key, index} handed out during a rotation but not used yet
 	wrapKeys: new Map(),  // peer id -> AES-GCM key derived from ECDH with that peer
 	haveKey: new Set(),   // peer ids whose sender key we hold (livekit.js only subscribes to these)
 	queue: Promise.resolve(), // messages are handled strictly in arrival order (see handleE2EEMessage)
@@ -58,6 +59,7 @@ async function initE2EE() {
 	e2ee.wrapKeys = new Map();
 	e2ee.haveKey = new Set();
 	e2ee.keyIndex = 0;
+	e2ee.pending = null;
 	e2ee.senderKey = crypto.getRandomValues(new Uint8Array(32));
 	await e2ee.provider.setRawKey(state.myId, e2ee.senderKey, e2ee.keyIndex);
 	return e2ee.provider;
@@ -80,12 +82,11 @@ async function deriveWrapKey(peerId, peerPub) {
 // message can't be replayed as coming from someone else or for another slot.
 const keyAad = (from, to, index) => new TextEncoder().encode(`${from}>${to}#${index}`);
 
-async function sendSenderKey(peerId) {
+async function sendSenderKey(peerId, key = e2ee.senderKey, index = e2ee.keyIndex) {
 	const wrapKey = e2ee.wrapKeys.get(peerId);
 	if (!wrapKey) return;
-	const index = e2ee.keyIndex;
 	const iv = crypto.getRandomValues(new Uint8Array(12));
-	const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: keyAad(state.myId, peerId, index) }, wrapKey, e2ee.senderKey);
+	const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: keyAad(state.myId, peerId, index) }, wrapKey, key);
 	send({ type: 'e2ee', target: peerId, payload: { kind: 'key', index, iv: b64encode(iv), ct: b64encode(ct) } });
 }
 
@@ -103,7 +104,9 @@ async function processE2EEMessage(from, payload) {
 			// Answer a newcomer's broadcast hello with our own public key so they can
 			// derive the same wrap key, then hand them our current sender key.
 			if (!payload.reply) send({ type: 'e2ee', target: from, payload: { kind: 'hello', pub: e2ee.publicKey, reply: true } });
+			// Mid-rotation they need both: the key we encrypt with now and the one coming up.
 			await sendSenderKey(from);
+			if (e2ee.pending) await sendSenderKey(from, e2ee.pending.key, e2ee.pending.index);
 		} else if (payload.kind === 'key') {
 			const wrapKey = e2ee.wrapKeys.get(from);
 			if (!wrapKey) return;
@@ -131,14 +134,16 @@ function rotateE2EEOnLeave(peerId) {
 	if (!e2ee.keyPair) return;
 	clearTimeout(e2ee.rotateTimer);
 	e2ee.rotateTimer = setTimeout(async () => {
-		e2ee.keyIndex = (e2ee.keyIndex + 1) % E2EE_KEYRING_SIZE;
-		e2ee.senderKey = crypto.getRandomValues(new Uint8Array(32));
-		const index = e2ee.keyIndex, key = e2ee.senderKey;
-		await Promise.all([...e2ee.wrapKeys.keys()].map(sendSenderKey));
+		const pending = { key: crypto.getRandomValues(new Uint8Array(32)), index: (e2ee.keyIndex + 1) % E2EE_KEYRING_SIZE };
+		e2ee.pending = pending;
+		await Promise.all([...e2ee.wrapKeys.keys()].map(id => sendSenderKey(id, pending.key, pending.index)));
 		setTimeout(() => {
-			if (e2ee.keyIndex !== index) return; // superseded by a later rotation
-			e2ee.provider.setRawKey(state.myId, key, index);
-			console.log(`[E2EE] Rotated to key #${index}`);
+			if (e2ee.pending !== pending) return; // superseded by a later rotation
+			e2ee.senderKey = pending.key;
+			e2ee.keyIndex = pending.index;
+			e2ee.pending = null;
+			e2ee.provider.setRawKey(state.myId, pending.key, pending.index);
+			console.log(`[E2EE] Rotated to key #${pending.index}`);
 		}, E2EE_ROTATE_DELAY);
 	}, 250);
 }

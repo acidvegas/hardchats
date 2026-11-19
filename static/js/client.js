@@ -257,6 +257,8 @@ function connectWebSocket(username, captchaId, captchaAnswer) {
 
 	state.ws.onopen = () => {
 		state.wsReconnectAttempts = 0; // Reset on successful connection
+		flushDiag();
+		state.rejoining = !!state.reconnectToken;
 
 		if (state.reconnectToken) {
 			// Reconnecting with token (no captcha needed)
@@ -330,6 +332,14 @@ function attemptReconnect() {
 function handleSignal(data) {
 	switch (data.type) {
 		case 'error':
+			console.warn('[WS] Server error:', data.message);
+			// Rejoin refused (e.g. the server restarted and forgot our token): we are not in
+			// the room any more, so start over from the login screen instead of a dead call.
+			if (state.rejoining) {
+				state.intentionalDisconnect = true;
+				location.reload();
+				break;
+			}
 			showError(data.message);
 			break;
 
@@ -345,6 +355,7 @@ function handleSignal(data) {
 				if (localUser) state.users['local'] = localUser;
 			}
 
+			state.rejoining = false;
 			state.myId = data.you;
 			state.sessionStart = data.session_start;
 			state.maxCameras = data.max_cameras;
@@ -861,6 +872,17 @@ function handlePageLeave() {
 // Use both events for better cross-browser/mobile support
 window.onbeforeunload = handlePageLeave;
 window.addEventListener('pagehide', handlePageLeave);
+
+// A page restored from the back/forward cache already ran handlePageLeave (its call is
+// gone), so load it fresh.
+window.addEventListener('pageshow', (e) => { if (e.persisted) location.reload(); });
+
+// Lifecycle events end up in the debug log (and DIAG_LOGS) to explain dropped sessions.
+['beforeunload', 'pagehide', 'pageshow', 'freeze', 'resume', 'visibilitychange', 'online', 'offline'].forEach(type => {
+	(type === 'freeze' || type === 'resume' || type === 'visibilitychange' ? document : window).addEventListener(type, (e) => {
+		console.log(`[WS] page ${type}${e.persisted !== undefined ? ` persisted=${e.persisted}` : ''} visibility=${document.visibilityState}`);
+	});
+});
 
 // Mobile browsers suspend the AudioContext when the tab/app is backgrounded. Resume on
 // foreground so audio comes back without requiring the user to tap something.

@@ -438,6 +438,7 @@ async def handle_message(client_id: str, data: dict):
 
 		# Validate reconnect token
 		if not token or token not in reconnect_tokens:
+			logging.warning(f'[{client_id}] Reconnect rejected: unknown token')
 			await clients[client_id]['ws'].send_json({'type': 'error', 'message': 'Invalid reconnect token'})
 			return
 
@@ -450,11 +451,13 @@ async def handle_message(client_id: str, data: dict):
 		username = token_data['username']
 		del reconnect_tokens[token]  # Consume the old token
 
-		# Check for duplicate username (skip if it's the same user reconnecting)
-		for cid, c in clients.items():
+		# The token proves this is the same user: if their old connection is still registered
+		# (a dead mobile socket can linger until the heartbeat times out), drop it now
+		for cid, c in list(clients.items()):
 			if cid != client_id and c['username'] and c['username'].lower() == username.lower():
-				await clients[client_id]['ws'].send_json({'type': 'error', 'message': 'Username already in use'})
-				return
+				logging.info(f'[{client_id}] Reconnect replaces stale session {cid} ({username})')
+				await cleanup(cid)
+				await c['ws'].close()
 
 		active_users = len([c for c in clients.values() if c['username']])
 		if active_users >= config.MAX_USERS:
