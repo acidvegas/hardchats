@@ -3,7 +3,7 @@
 # hardchats/helpers/test_livekit.py
 #
 # End-to-end test of the LiveKit build with headless Chromium clients (fake mic + camera).
-# Needs ssh access to the host running the hardchats-beta container (token minting + SFU API).
+# Needs ssh access to the host running the hardchats container (token minting + SFU API).
 # Usage: python3 helpers/test_livekit.py [base_url] [test ...]
 
 import asyncio
@@ -19,7 +19,7 @@ except ImportError:
 
 BASE       = 'https://hardchats.com/'
 SSH_HOST   = 'super-svc'
-CONTAINER  = 'hardchats-beta'
+CONTAINER  = 'hardchats'
 SFU_IPS    = ('69.30.206.130', '2604:4300:a:282:')
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36'
 ARGS       = ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--autoplay-policy=no-user-gesture-required', '--auto-select-desktop-capture-source=Entire screen']
@@ -348,6 +348,7 @@ async def main():
 			if await alice.evaluate('state.camEnabled'):
 				s, ok = await wait_stats(bob, f"(s['{A2}']||[]).some(t => t.source === 'camera' && t.subscribed && t.framesDecoded > 5)")
 				check('alice camera is re-published after the rejoin', ok, json.dumps(find(s, A2, 'camera')))
+			A = A2
 
 		if want('recording'):
 			# *73# records what you hear (peer audio taps), *74# broadcasts it over the app WebSocket
@@ -375,6 +376,8 @@ async def main():
 			check('after LiveKit drops alice she rejoins the media room and bob hears her', ok, json.dumps(find(s, A, 'microphone')))
 			_, ok = await wait_stats(alice, f"(s['{B}']||[]).some(t => t.source === 'microphone' && t.subscribed && t.energy > 0.01)")
 			check('rejoined alice hears bob again', ok)
+			# LiveKit logs its data channels closing when the server kicks a session: expected here
+			alice.errors[:] = [e for e in alice.errors if 'DataChannel error' not in e and 'closed unexpectedly' not in e]
 
 		if want('stale'):
 			# Alice's socket dies without the server noticing (common on mobile) and she reconnects
@@ -412,8 +415,9 @@ async def main():
 			await alice.evaluate("openSettings({ stopPropagation() {} })")
 			await alice.wait_for_function("document.getElementById('mic-select').options.length > 0 && document.getElementById('cam-select').options.length > 0")
 			if await alice.evaluate('state.camEnabled'):
-				await alice.click('#cam-btn')
-			await alice.evaluate("() => { selectedMicId = 'force-switch'; const c = document.getElementById('cam-select'); c.value = [...c.options].find(o => o.value)?.value || ''; }")
+				await alice.evaluate('toggleCam()') # the settings dialog covers the button
+				await alice.wait_for_function('!state.camEnabled')
+			await alice.evaluate("() => { selectedMicId = 'force-switch'; const c = document.getElementById('cam-select'); c.value = [...c.options].find(o => o.value)?.value || ''; const sp = document.getElementById('speaker-select'); if (sp) sp.value = ''; }") # headless has no audio output device to route to
 			old_mic = await alice.evaluate('state.localStream.getAudioTracks()[0].id')
 			await alice.evaluate('applySettings()')
 			await alice.wait_for_function('state.camPub && state.camPub.track', timeout=10000)
