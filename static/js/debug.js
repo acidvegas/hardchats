@@ -34,11 +34,21 @@ function closeDebugModal() {
 	}
 }
 
-// Set from /api/config (diag_logs): mirror every debug log line to the server log
+// Set from /api/config (diag_logs): mirror every debug log line to the server log. Lines
+// logged while the WebSocket is down are queued and sent once it reconnects.
 let diagLogs = false;
+const diagQueue = [];
+
+function flushDiag() {
+	while (diagQueue.length && state.ws?.readyState === WebSocket.OPEN) send({ type: 'diag', line: diagQueue.shift() });
+}
 
 function addDebugLog(level, message) {
-	if (diagLogs) send({ type: 'diag', line: `${level} ${message}` });
+	if (diagLogs) {
+		diagQueue.push(`${new Date().toISOString().slice(11, 23)} ${level} ${message}`);
+		if (diagQueue.length > 300) diagQueue.shift();
+		flushDiag();
+	}
 	const timestamp = new Date().toLocaleTimeString();
 	debugLogs.push({ level, message, timestamp });
 	if (debugLogs.length > MAX_DEBUG_LOGS) {

@@ -373,6 +373,28 @@ async def main():
 			_, ok = await wait_stats(alice, f"(s['{B}']||[]).some(t => t.source === 'microphone' && t.subscribed && t.energy > 0.01)")
 			check('rejoined alice hears bob again', ok)
 
+		if want('stale'):
+			# Alice's socket dies without the server noticing (common on mobile) and she reconnects
+			# while her old session is still registered: the reconnect must replace it.
+			await alice.evaluate('() => { const old = state.ws; old.onclose = null; old.onmessage = null; disconnectLivekit(); connectWebSocket(state.username); }')
+			await alice.wait_for_function(f"state.myId && state.myId !== '{A}' && state.room && state.room.state === 'connected' && state.micPub", timeout=20000)
+			A3 = await alice.evaluate('state.myId')
+			s, ok = await wait_stats(bob, f"(s['{A3}']||[]).some(t => t.source === 'microphone' && t.subscribed && t.energy > 0.01)")
+			names = await bob.evaluate("[...document.querySelectorAll('#users-list .user-name')].map(e => e.textContent)")
+			check('reconnect over a stale session: bob hears alice and lists her once', ok and sorted(names) == ['alice_t', 'bob_t'], f'{A} -> {A3}, bob list {names}')
+			names = await alice.evaluate("[...document.querySelectorAll('#users-list .user-name')].map(e => e.textContent)")
+			check('reconnected alice lists bob', sorted(names) == ['alice_t', 'bob_t'], json.dumps(names))
+			A = A3
+
+		if want('bfcache'):
+			await bob.goto(BASE + 'api/config')
+			await bob.go_back()
+			await bob.wait_for_load_state()
+			await asyncio.sleep(2)
+			on_login = await bob.evaluate("!document.getElementById('login-screen').classList.contains('hidden')")
+			names = await alice.evaluate("[...document.querySelectorAll('#users-list .user-name')].map(e => e.textContent)")
+			check('navigating away and back: bob is on the login screen and gone from alice\'s list', on_login and names == ['alice_t'], f'login={on_login} alice list {names}')
+
 		if want('ui'):
 			await bob.click('#debug-btn')
 			await asyncio.sleep(1)

@@ -54,6 +54,7 @@ const state = {
 	wsReconnectAttempts: 0,
 	wsReconnectTimer: null,
 	intentionalDisconnect: false,
+	rejoining: false, // sent a 'reconnect', waiting for the server to accept it
 	timerStarted: false,
 	// Settings
 	settings: {
