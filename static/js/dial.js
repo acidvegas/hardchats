@@ -84,10 +84,19 @@ function showDialCodes(codes) {
 		const li = document.createElement('li');
 		const codeEl = document.createElement('code');
 		codeEl.textContent = code;
+		// A trailing "(everyone)" / "(just you)" becomes a badge instead of wrapping text.
+		const scope = desc.match(/\s*\((everyone|just you)\)\s*$/i);
 		const descEl = document.createElement('span');
-		descEl.textContent = desc;
+		descEl.className = 'dial-code-desc';
+		descEl.textContent = scope ? desc.slice(0, scope.index) : desc;
 		li.appendChild(codeEl);
 		li.appendChild(descEl);
+		if (scope) {
+			const badge = document.createElement('span');
+			badge.className = `dial-code-scope ${scope[1].toLowerCase() === 'everyone' ? 'everyone' : ''}`;
+			badge.textContent = scope[1].toLowerCase();
+			li.appendChild(badge);
+		}
 		list.appendChild(li);
 	});
 	$('dial-codes-modal')?.classList.remove('hidden');
