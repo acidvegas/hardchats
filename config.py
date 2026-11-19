@@ -23,15 +23,17 @@ SERVER_PORT = 58080
 MAX_USERS   = 25
 MAX_CAMERAS = 10
 
-# TURN/STUN settings
-STUN_SERVER = f'stun:{os.getenv('TURN_SERVER')}:{os.getenv('TURN_PORT')}'
-TURN_SERVER = {
-	'host'       : os.getenv('TURN_SERVER'),
-	'port'       : os.getenv('TURN_PORT'),
-	'username'   : os.getenv('TURN_USERNAME'),
-	'credential' : os.getenv('TURN_PASSWORD')
-}
-ICE_TRANSPORT_POLICY = 'relay'
+# LiveKit SFU settings
+LIVEKIT_URL        = os.getenv('LIVEKIT_URL')                             # Public signaling URL the browser connects to (wss://...)
+LIVEKIT_API_URL    = os.getenv('LIVEKIT_API_URL', 'http://127.0.0.1:7880') # Server-side RoomService URL
+LIVEKIT_API_KEY    = os.getenv('LIVEKIT_API_KEY')
+LIVEKIT_API_SECRET = os.getenv('LIVEKIT_API_SECRET')
+LIVEKIT_ROOM       = 'hardchats'
+LIVEKIT_TOKEN_TTL  = 600 # seconds, only used for the initial connect (LiveKit refreshes it while connected)
+E2EE_MAX_PAYLOAD   = 2048 # bytes, cap on relayed key-exchange messages
+
+# Client diagnostics: browsers stream their media/E2EE logs + receive stats to the server log (DIAG_LOGS=1)
+DIAG_LOGS = os.getenv('DIAG_LOGS', '0') == '1'
 
 
 # IRC settings
@@ -44,6 +46,10 @@ IRC_MAX_NICK_LENGTH = 20
 IRC_RECONNECT_DELAY = 15000 # milliseconds
 IRC_JOIN_DELAY      = 6000  # milliseconds (delay before joining channel)
 IRC_MAX_BACKLOG     = 5000  # max messages to keep in chat history
+
+
+# IRC bot (scheduled announcements + live join/leave lines), disabled with IRCBOT_ENABLED=0
+IRCBOT_ENABLED = os.getenv('IRCBOT_ENABLED', '1') == '1'
 
 
 # Zulip settings (join/leave announcements, disabled when ZULIP_BOT_KEY is unset)
@@ -62,14 +68,8 @@ def get_client_config():
 		'version'     : VERSION,
 		'max_users'   : MAX_USERS,
 		'max_cameras' : MAX_CAMERAS,
-		'turn'        : {
-			'stun_url'             : STUN_SERVER,
-			'host'                 : TURN_SERVER['host'],
-			'port'                 : TURN_SERVER['port'],
-			'username'             : TURN_SERVER['username'],
-			'credential'           : TURN_SERVER['credential'],
-			'ice_transport_policy' : ICE_TRANSPORT_POLICY
-		},
+		'livekit_url' : LIVEKIT_URL,
+		'diag_logs'   : DIAG_LOGS,
 		'irc': {
 			'server'          : IRC_SERVER,
 			'channel'         : IRC_CHANNEL,
