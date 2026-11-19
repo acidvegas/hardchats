@@ -139,8 +139,10 @@ async def remove_participant(identity: str):
 	return await remote_python(code)
 
 
-async def new_client(browser, name: str, extra_init: str = None):
-	if browser.browser_type.name == 'firefox':
+async def new_client(browser, name: str, extra_init: str = None, ctx=None):
+	if ctx:
+		pass # caller-built context (e.g. a mobile device profile)
+	elif browser.browser_type.name == 'firefox':
 		ctx = await browser.new_context() # Firefox keeps its own UA (a Chrome UA would make sites treat it as Chrome)
 	else:
 		ctx = await browser.new_context(user_agent=USER_AGENT, permissions=['microphone', 'camera'])
@@ -156,7 +158,7 @@ async def new_client(browser, name: str, extra_init: str = None):
 	await page.wait_for_function("document.getElementById('captcha-question').textContent.includes('=')")
 	a, op, b = re.match(r'(\d+) (\S) (\d+)', await page.text_content('#captcha-question')).groups()
 	await page.fill('#captcha-answer', str({'+': int(a) + int(b), '-': int(a) - int(b), '×': int(a) * int(b)}[op]))
-	await page.click('#connect-btn')
+	await page.evaluate("document.getElementById('connect-btn').click()")
 	await page.wait_for_function("state.room && state.room.state === 'connected' && state.micPub", timeout=20000)
 	page.hc_name = name
 	page.hc_id = await page.evaluate('state.myId')
@@ -395,6 +397,89 @@ async def main():
 			names = await alice.evaluate("[...document.querySelectorAll('#users-list .user-name')].map(e => e.textContent)")
 			check('navigating away and back: bob is on the login screen and gone from alice\'s list', on_login and names == ['alice_t'], f'login={on_login} alice list {names}')
 
+		if want('continuity'):
+			# Turning a camera on must not disturb the audio already flowing (no resubscribe)
+			before = find(await stats(bob), A, 'microphone').get('packets') or 0
+			await bob.click('#cam-btn')
+			await wait_stats(alice, f"(s['{B}']||[]).some(t => t.source === 'camera' && t.framesDecoded > 5)")
+			after = find(await stats(bob), A, 'microphone').get('packets') or 0
+			check('bob turning his camera on keeps the same mic receiver for alice (packet count keeps growing)', after > before, f'{before} -> {after}')
+			await bob.click('#cam-btn')
+
+		if want('settings'):
+			# Device switch through the settings dialog (re-acquire the mic, publish a camera)
+			await alice.evaluate("openSettings({ stopPropagation() {} })")
+			await alice.wait_for_function("document.getElementById('mic-select').options.length > 0 && document.getElementById('cam-select').options.length > 0")
+			if await alice.evaluate('state.camEnabled'):
+				await alice.click('#cam-btn')
+			await alice.evaluate("() => { selectedMicId = 'force-switch'; const c = document.getElementById('cam-select'); c.value = [...c.options].find(o => o.value)?.value || ''; }")
+			old_mic = await alice.evaluate('state.localStream.getAudioTracks()[0].id')
+			await alice.evaluate('applySettings()')
+			await alice.wait_for_function('state.camPub && state.camPub.track', timeout=10000)
+			same = await alice.evaluate(f"state.localStream.getAudioTracks()[0].id !== '{old_mic}' && state.micPub.track.mediaStreamTrack === state.localStream.getAudioTracks()[0]")
+			await asyncio.sleep(2)
+			d = await energy_delta(bob, A, 3)
+			check('settings: switching mic swaps the published track and bob still hears alice', same and d > 0.01, f'swapped={same} energy delta {d:.4f}')
+			s, ok = await wait_stats(bob, f"(s['{A}']||[]).some(t => t.source === 'camera' && t.subscribed && t.framesDecoded > 5)")
+			check('settings: picking a camera publishes it and bob decodes it', ok, json.dumps(find(s, A, 'camera')))
+			await alice.evaluate('closeSettings()')
+
+		if want('noise'):
+			await alice.evaluate("handleToggleClick('toggle-noisesuppression', 'noiseSuppression'); applyNoiseSuppression();")
+			await asyncio.sleep(2)
+			d = await energy_delta(bob, A, 3)
+			check('noise suppression toggle keeps alice audible', d > 0.01, f'energy delta {d:.4f}')
+			await alice.evaluate("handleToggleClick('toggle-noisesuppression', 'noiseSuppression'); applyNoiseSuppression();")
+
+		if want('speaker'):
+			await bob.evaluate("handleToggleClick('toggle-speakermode', 'speakerMode'); rebuildAudioSinksForSpeakerMode();")
+			el = await bob.evaluate(f"(() => {{ const e = state.peers['{A}'].audioElement; return e ? [e.tagName, e.paused, !!e.srcObject, e.srcObject?.getAudioTracks()[0]?.readyState] : null; }})()")
+			check('speaker mode toggle rebuilds alice\'s sink as a live <audio> element', el == ['AUDIO', False, True, 'live'], json.dumps(el))
+			await bob.evaluate("handleToggleClick('toggle-speakermode', 'speakerMode'); rebuildAudioSinksForSpeakerMode();")
+
+		if want('volume'):
+			await bob.evaluate(f"() => {{ state.peers['{A}'].volume = 0; applyPeerVolume('{A}'); }}")
+			muted = await bob.evaluate(f"state.peers['{A}'].audioElement.muted")
+			await bob.evaluate(f"() => {{ state.peers['{A}'].volume = 40; applyPeerVolume('{A}'); }}")
+			el = await bob.evaluate(f"[state.peers['{A}'].audioElement.muted, state.peers['{A}'].audioElement.volume]")
+			check('per-user volume: 0 mutes alice, 40 plays her at 0.4', muted and el == [False, 0.4], f'at 0 muted={muted}, at 40 {el}')
+			await bob.evaluate(f"() => {{ state.peers['{A}'].volume = 100; applyPeerVolume('{A}'); }}")
+			await bob.click('#volume-btn')
+			gm = await bob.evaluate(f"state.peers['{A}'].audioElement.muted")
+			await bob.click('#volume-btn')
+			check('global mute button mutes alice\'s sink and unmute restores it', gm and not await bob.evaluate(f"state.peers['{A}'].audioElement.muted"))
+
+		if want('defcon'):
+			await bob.click('#defcon-btn')
+			erin = await new_client(browser, 'erin_t')
+			E = erin.hc_id
+			await erin.click('#cam-btn')
+			await asyncio.sleep(4)
+			s = await stats(bob)
+			cam, mic = find(s, E, 'camera'), find(s, E, 'microphone')
+			el = await bob.evaluate(f"state.peers['{E}']?.audioElement?.muted")
+			check('DEFCON: a newcomer\'s camera is not received and their audio is muted', cam.get('subscribed') is False and el is True, f'cam={json.dumps(cam)} mic-sub={mic.get("subscribed")} muted={el}')
+			await bob.evaluate(f"togglePeerVideo('{E}')")
+			_, ok = await wait_stats(bob, f"(s['{E}']||[]).some(t => t.source === 'camera' && t.subscribed && t.framesDecoded > 3)")
+			check('DEFCON: showing their video again subscribes it', ok)
+			await bob.click('#defcon-btn')
+			await erin.context.close()
+
+		if want('dialfx'):
+			for code in ('*420#', '*666#', '*9059#', '*1337#', '*401#', '*000#', '*#06#'):
+				await alice.evaluate(f"send({{ type: 'dial', sequence: '{code}' }})")
+				await asyncio.sleep(0.5)
+			await asyncio.sleep(1)
+			d = await energy_delta(bob, A, 2)
+			check('dial-code effects (trippy/schizo/pong/rainbow/ghost/reset/list) run without breaking audio', d > 0.01, f'energy delta {d:.4f}')
+
+		if want('hangup'):
+			gone = alice.hc_id
+			await alice.evaluate("document.getElementById('hangup-btn').click()") # the *#06# list modal covers it
+			await asyncio.sleep(3)
+			names = await bob.evaluate("[...document.querySelectorAll('#users-list .user-name')].map(e => e.textContent)")
+			check('hangup: alice leaves bob\'s list and the SFU', 'alice_t' not in names and gone not in [p['identity'] for p in await list_participants()], json.dumps(names))
+
 		if want('ui'):
 			await bob.click('#debug-btn')
 			await asyncio.sleep(1)
@@ -403,6 +488,9 @@ async def main():
 			await bob.click('#debug-close')
 			users = await bob.evaluate("[...document.querySelectorAll('#users-list .user-name')].map(e => e.textContent)")
 			check('users list shows both users', sorted(users) == ['alice_t', 'bob_t'], json.dumps(users))
+			if await alice.evaluate('state.camEnabled'):
+				pip = await bob.evaluate("[!document.getElementById('pip-btn').classList.contains('hidden'), !!document.getElementById('pip-video')?.srcObject]")
+				check('picture-in-picture is offered and fed with alice\'s camera', pip == [True, True], json.dumps(pip))
 			count = await bob.evaluate("fetch('api/users/count').then(r => r.json())")
 			check('user count API counts the room', count.get('count', 0) >= 2, json.dumps(count))
 
@@ -428,6 +516,35 @@ async def main():
 			s, ok = await wait_stats(fox, f"(s['{chrome.hc_id}']||[]).some(t => t.source === 'camera' && t.subscribed && t.encrypted && t.framesDecoded > 5)")
 			check('firefox decodes chrome camera (encrypted)', ok, json.dumps(find(s, chrome.hc_id, 'camera')))
 			for p in (chrome, fox):
+				check(f'{p.hc_name} has no JS errors', not p.errors, '; '.join(p.errors[:5]))
+			await ff.close()
+			await browser.close()
+
+		if want('mobile'):
+			# Chrome on Android (device profile + mobile UA) <-> Firefox, then each side silently
+			# loses its socket (screen off / network switch) and rejoins
+			ff = await pw.firefox.launch(firefox_user_prefs={'media.navigator.streams.fake': True, 'media.navigator.permission.disabled': True})
+			browser = await pw.chromium.launch(args=ARGS)
+			mctx = await browser.new_context(**{**pw.devices['Pixel 7'], 'user_agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Mobile Safari/537.36'}, permissions=['microphone', 'camera'])
+			phone = await new_client(browser, 'phone_t', ctx=mctx)
+			fox = await new_client(ff, 'fox_t')
+			await phone.evaluate('toggleCam()') # the users sidebar covers the controls on a phone after joining
+			await fox.click('#cam-btn')
+			both = lambda pid: f"(s['{pid}']||[]).some(t => t.source === 'camera' && t.framesDecoded > 5) && (s['{pid}']||[]).some(t => t.source === 'microphone' && t.energy > 0.01)"
+			_, ok = await wait_stats(phone, both(fox.hc_id))
+			check('mobile chrome hears + sees firefox', ok)
+			_, ok = await wait_stats(fox, both(phone.hc_id))
+			check('firefox hears + sees mobile chrome', ok)
+			vis = await phone.evaluate("getComputedStyle(document.getElementById('flip-cam-btn')).display")
+			check('mobile: flip camera button shown while the camera is on', vis != 'none', vis)
+			for me, other in ((phone, fox), (fox, phone)):
+				old = await me.evaluate('state.myId')
+				await me.evaluate('() => { const old = state.ws; old.onclose = null; old.onmessage = null; disconnectLivekit(); connectWebSocket(state.username); }')
+				await me.wait_for_function(f"state.myId !== '{old}' && state.room && state.room.state === 'connected' && state.micPub", timeout=20000)
+				_, ok = await wait_stats(other, both(await me.evaluate('state.myId')))
+				names = await other.evaluate("[...document.querySelectorAll('#users-list .user-name')].map(e => e.textContent)")
+				check(f'{me.hc_name} silently drops + rejoins: {other.hc_name} hears/sees it again and lists it once', ok and sorted(names) == ['fox_t', 'phone_t'], json.dumps(names))
+			for p in (phone, fox):
 				check(f'{p.hc_name} has no JS errors', not p.errors, '; '.join(p.errors[:5]))
 			await ff.close()
 			await browser.close()
