@@ -4,11 +4,11 @@ set -xev
 sudo certbot certonly --standalone -d hardchats.com
 
 # Create an NGINX config using tee
-sudo tee /etc/nginx/sites-available/hardchats.com.conf << EOF
+sudo tee /etc/nginx/sites-available/hardchats.com.conf << 'EOF'
 server {
     listen 80;
     listen [::]:80;
-    server_name dev.hardchats.com;
+    server_name hardchats.com;
 
     return 301 https://$host$request_uri;
 }
@@ -16,7 +16,7 @@ server {
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
-    server_name dev.hardchats.com;
+    server_name hardchats.com;
 
     ssl_certificate     /etc/letsencrypt/live/hardchats.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/hardchats.com/privkey.pem;
@@ -32,6 +32,20 @@ server {
 
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
+    }
+
+    location /livekit/ {
+        proxy_pass http://127.0.0.1:7880/;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 3600s;
     }
 }
 EOF

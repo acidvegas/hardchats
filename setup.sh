@@ -9,7 +9,7 @@
 # Exit on error & verbose mode (no xtrace: it would print the LiveKit secret and Zulip key)
 set -ev
 
-# Container name + local port (override to run a second copy, e.g. HC_NAME=hardchats-beta HC_PORT=58081)
+# Container name + local port (override to run a second copy, e.g. HC_NAME=hardchats-dev HC_PORT=58081)
 HC_NAME=${HC_NAME:-hardchats}
 HC_PORT=${HC_PORT:-58080}
 
@@ -42,6 +42,7 @@ docker run -d --name ${HC_NAME} --restart unless-stopped --user 10001:10001 -p 1
   -e IRC_CHANNEL=${IRC_CHANNEL} \
   -e IRCBOT_ENABLED=${IRCBOT_ENABLED:-1} \
   -e DIAG_LOGS=${DIAG_LOGS:-0} \
+  -e FOOTER_NOTICE="${FOOTER_NOTICE}" \
   -e LIVEKIT_URL=${LIVEKIT_URL} \
   -e LIVEKIT_API_URL=http://172.17.0.1:7880 \
   -e LIVEKIT_API_KEY=${LIVEKIT_API_KEY} \

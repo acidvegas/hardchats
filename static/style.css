@@ -1581,6 +1581,10 @@ button:focus-visible, input:focus-visible {
 	color: var(--text-muted);
 }
 
+.footer-notice:empty {
+	display: none;
+}
+
 .footer-notice a {
 	color: var(--acid);
 	text-decoration: none;

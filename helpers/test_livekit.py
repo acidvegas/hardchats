@@ -203,7 +203,7 @@ async def main():
 			check(f'{me.hc_name} hears {other.hc_name} (encrypted mic, decoded audio)', ok, json.dumps(find(s, other.hc_id, 'microphone')))
 
 		urls = await alice.evaluate('window.iceUrls')
-		check('ICE servers are only our own (no third-party STUN)', bool(urls) and all('hardchats.com' in u for u in urls), json.dumps(urls))
+		check('ICE servers are only our own (no third-party STUN)', bool(urls) and all('hardchats.com' in u or any(ip in u for ip in SFU_IPS) for u in urls), json.dumps(urls))
 
 		routes = {t.get('route') for t in (await stats(bob)).get(A, []) if t.get('route')}
 		check('media routes only to the SFU, never to the other browser', bool(routes) and all(any(ip in r for ip in SFU_IPS) for r in routes), ', '.join(routes))

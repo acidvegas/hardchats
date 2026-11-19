@@ -17,6 +17,9 @@ if os.path.exists('.env'):
 # Version
 VERSION = '2.0.0'
 
+# Optional HTML shown in the page footer next to the version (empty = nothing)
+FOOTER_NOTICE = os.getenv('FOOTER_NOTICE', '')
+
 # Server settings
 SERVER_HOST = '0.0.0.0'
 SERVER_PORT = 58080
