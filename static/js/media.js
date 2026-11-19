@@ -1,6 +1,7 @@
 // HardChats - Media Controls (Mic, Camera, Screen, Volume, DEFCON)
 // Requires: state, $, send from state.js
 // Requires: updateUI from ui.js
+// Requires: publishCamera, unpublishCamera, replaceCamera, publishScreen, unpublishScreen from livekit.js
 // Requires: getVideoConstraints from settings.js (at runtime)
 
 // Camera cooldown state
@@ -47,20 +48,11 @@ async function toggleCam() {
 			});
 			const videoTrack = videoStream.getVideoTracks()[0];
 			state.localStream.addTrack(videoTrack);
-
-			for (const [peerId, peer] of Object.entries(state.peers)) {
-				peer.pc.addTrack(videoTrack, state.localStream);
-				await sendOffer(peerId);
-			}
+			await publishCamera(videoTrack);
 
 			state.camEnabled = true;
 			state.users['local'].camOn = true;
 			send({ type: 'camera_status', enabled: true });
-
-			// Apply the low-bandwidth outgoing bitrate ceiling to the fresh video senders,
-			// and pause them for any peer that's in car mode (audio-only).
-			if (typeof applyVideoBitrateCap === 'function') applyVideoBitrateCap();
-			if (typeof applyAudioOnlyGatingAll === 'function') applyAudioOnlyGatingAll();
 
 		} catch (err) {
 			console.error('Camera error:', err);
@@ -68,18 +60,12 @@ async function toggleCam() {
 			return;
 		}
 	} else {
-		// Stop and remove video tracks
+		// Unpublish the camera (never the screen share), then stop and remove video tracks
+		await unpublishCamera();
 		state.localStream.getVideoTracks().forEach(track => {
 			track.stop();
 			state.localStream.removeTrack(track);
 		});
-
-		// Remove camera senders (never the screen-share sender) and renegotiate with each peer
-		for (const [peerId, peer] of Object.entries(state.peers)) {
-			const videoSenders = peer.pc.getSenders().filter(s => s.track && s.track.kind === 'video' && s !== peer.screenSender);
-			videoSenders.forEach(sender => peer.pc.removeTrack(sender));
-			await sendOffer(peerId);
-		}
 
 		state.camEnabled = false;
 		state.users['local'].camOn = false;
@@ -113,8 +99,8 @@ async function toggleCam() {
 	updateUI();
 }
 
-// Acquire a camera track for the given facing and wire it into the local stream + every
-// peer's camera sender. Removes any leftover camera track first (screen-share lives on a
+// Acquire a camera track for the given facing and wire it into the local stream + the
+// published camera. Removes any leftover camera track first (screen-share lives on a
 // separate stream, so it's untouched).
 async function swapCameraTrack(facing) {
 	const stream = await navigator.mediaDevices.getUserMedia({
@@ -127,11 +113,7 @@ async function swapCameraTrack(facing) {
 		state.localStream.removeTrack(t);
 	});
 	state.localStream.addTrack(track);
-
-	for (const [peerId, peer] of Object.entries(state.peers)) {
-		const sender = peer.pc.getSenders().find(s => s.track && s.track.kind === 'video' && s !== peer.screenSender);
-		if (sender) await sender.replaceTrack(track);
-	}
+	await replaceCamera(track);
 }
 
 // Mobile flip-camera button: switch between front ('user') and back ('environment').
@@ -160,9 +142,6 @@ async function flipCamera() {
 		try { await swapCameraTrack(prev); } catch (e2) { console.error('[Camera] Restore failed:', e2); }
 	}
 
-	// Re-apply outgoing shaping to the fresh sender track.
-	if (typeof applyVideoBitrateCap === 'function') applyVideoBitrateCap();
-	if (typeof applyAudioOnlyGatingAll === 'function') applyAudioOnlyGatingAll();
 	updateVideoGrid();
 }
 
@@ -197,20 +176,11 @@ async function toggleScreen() {
 				}
 			};
 
-			// Add screen track to all peer connections, save sender reference
-			for (const [peerId, peer] of Object.entries(state.peers)) {
-				if (!peer.pc || peer.pc.connectionState === 'closed') continue;
-				peer.screenSender = peer.pc.addTrack(screenTrack, state.screenStream);
-				if (screenAudioTrack) peer.screenAudioSender = peer.pc.addTrack(screenAudioTrack, state.screenStream);
-				await sendOffer(peerId);
-			}
+			await publishScreen(state.screenStream);
 
 			state.screenEnabled = true;
 			state.users['local'].screenOn = true;
 			send({ type: 'screen_status', enabled: true });
-
-			// Pause the fresh screen senders for any peer in car mode (audio-only).
-			if (typeof applyAudioOnlyGatingAll === 'function') applyAudioOnlyGatingAll();
 
 		} catch (err) {
 			console.error('Screen share error:', err);
@@ -223,30 +193,14 @@ async function toggleScreen() {
 	} else {
 		// Stop screen share
 		if (state.screenStream) {
-			// Remove screen senders from peer connections BEFORE stopping tracks
-			for (const [peerId, peer] of Object.entries(state.peers)) {
-				if (!peer.pc || peer.pc.connectionState === 'closed') continue;
-				if (peer.screenSender) {
-					try {
-						peer.pc.removeTrack(peer.screenSender);
-					} catch (e) {
-						console.warn(`[Screen] Failed to remove screen sender for ${peerId}:`, e);
-					}
-					peer.screenSender = null;
-				}
-				if (peer.screenAudioSender) {
-					try {
-						peer.pc.removeTrack(peer.screenAudioSender);
-					} catch (e) {
-						console.warn(`[Screen] Failed to remove screen audio sender for ${peerId}:`, e);
-					}
-					peer.screenAudioSender = null;
-				}
-
-				await sendOffer(peerId);
+			// Unpublish the screen tracks BEFORE stopping them
+			try {
+				await unpublishScreen();
+			} catch (e) {
+				console.warn('[Screen] Failed to unpublish screen share:', e);
 			}
 
-			// Now stop the tracks after they've been removed from connections
+			// Now stop the tracks after they've been unpublished
 			state.screenStream.getTracks().forEach(track => track.stop());
 			state.screenStream = null;
 		}

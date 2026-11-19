@@ -3,6 +3,10 @@
 # hardchats/server.py
 
 import asyncio
+import base64
+import hashlib
+import hmac
+import json
 import logging
 import random
 import secrets
@@ -183,6 +187,55 @@ def cleanup_captchas():
 		del reconnect_tokens[k]
 
 
+def livekit_jwt(grants: dict, ttl: int) -> str:
+	'''
+	Sign a LiveKit access token (HS256 JWT)
+
+	:param grants: The claims to include alongside iss/nbf/exp
+	:param ttl: Seconds until the token expires
+	'''
+
+	b64 = lambda raw: base64.urlsafe_b64encode(raw).rstrip(b'=')
+	now = int(time.time())
+	header = b64(json.dumps({'alg': 'HS256', 'typ': 'JWT'}).encode())
+	payload = b64(json.dumps({'iss': config.LIVEKIT_API_KEY, 'nbf': now, 'exp': now + ttl, **grants}).encode())
+	signature = b64(hmac.new(config.LIVEKIT_API_SECRET.encode(), header + b'.' + payload, hashlib.sha256).digest())
+	return (header + b'.' + payload + b'.' + signature).decode()
+
+
+def livekit_token(client_id: str, username: str) -> str:
+	'''
+	Issue a room-join token for a client that passed the captcha
+
+	:param client_id: The ID of the client (used as the LiveKit identity)
+	:param username: The username of the client
+	'''
+
+	return livekit_jwt({
+		'sub'   : client_id,
+		'name'  : username,
+		'video' : {'room': config.LIVEKIT_ROOM, 'roomJoin': True, 'canPublish': True, 'canSubscribe': True, 'canPublishData': False}
+	}, config.LIVEKIT_TOKEN_TTL)
+
+
+async def livekit_remove(client_id: str):
+	'''
+	Kick a client's media session from the LiveKit room once they leave the app
+
+	:param client_id: The ID of the client
+	'''
+
+	token = livekit_jwt({'video': {'room': config.LIVEKIT_ROOM, 'roomAdmin': True}}, 60)
+	try:
+		async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+			async with session.post(f'{config.LIVEKIT_API_URL}/twirp/livekit.RoomService/RemoveParticipant', json={'room': config.LIVEKIT_ROOM, 'identity': client_id}, headers={'Authorization': f'Bearer {token}'}) as resp:
+				# 404 means they already left the media room on their own
+				if resp.status not in (200, 404):
+					logging.warning(f'[{client_id}] LiveKit remove failed: {resp.status} {(await resp.text())[:200]}')
+	except Exception as e:
+		logging.warning(f'[{client_id}] LiveKit remove failed: {e}')
+
+
 def get_camera_count() -> int:
 	'''Get the number of cameras currently on'''
 
@@ -355,6 +408,7 @@ async def handle_message(client_id: str, data: dict):
 			'session_start'   : session_start,
 			'max_cameras'     : config.MAX_CAMERAS,
 			'reconnect_token' : reconnect_token,
+			'livekit_token'   : livekit_token(client_id, username),
 			'trippy_mode'     : trippy_mode,
 			'schizo_mode'     : schizo_mode,
 			'pong_mode'       : pong_mode
@@ -431,6 +485,7 @@ async def handle_message(client_id: str, data: dict):
 			'session_start'   : session_start,
 			'max_cameras'     : config.MAX_CAMERAS,
 			'reconnect_token' : new_token,
+			'livekit_token'   : livekit_token(client_id, username),
 			'trippy_mode'     : trippy_mode,
 			'schizo_mode'     : schizo_mode,
 			'pong_mode'       : pong_mode
@@ -445,16 +500,17 @@ async def handle_message(client_id: str, data: dict):
 			'screen_on': clients[client_id].get('screen_on', False)
 		})
 
-	elif msg_type in ('offer', 'answer', 'candidate'):
+	elif msg_type == 'e2ee':
+		# End-to-end encryption key exchange. Payloads are public keys and sender keys
+		# sealed to one recipient, so the server only relays them. No target = everyone.
+		if not clients[client_id]['username'] or len(json.dumps(data.get('payload'))) > config.E2EE_MAX_PAYLOAD:
+			return
+		message = {'type': 'e2ee', 'from': client_id, 'payload': data.get('payload')}
 		target = data.get('target')
-		if target and target in clients and clients[target]['username']:
-			await clients[target]['ws'].send_json({
-				'type'      : msg_type,
-				'from'      : client_id,
-				'username'  : clients[client_id]['username'],
-				'sdp'       : data.get('sdp'),
-				'candidate' : data.get('candidate')
-			})
+		if target is None:
+			await broadcast(client_id, message)
+		elif target in clients and clients[target]['username']:
+			await clients[target]['ws'].send_json(message)
 
 	elif msg_type == 'camera_status':
 		enabled = data.get('enabled', False)
@@ -702,6 +758,7 @@ async def cleanup(client_id: str):
 	logging.info(f'[{client_id}] Disconnected: {username} ({active_users} users)')
 
 	if username:
+		asyncio.create_task(livekit_remove(client_id))
 		await broadcast_all({
 			'type' : 'user_left',
 			'id'   : client_id
@@ -772,8 +829,9 @@ async def init_app():
 	app.router.add_static('/static/', 'static')
 
 	# Baked-in IRC bot (event announcements + live join/leave in #hardchats)
-	app.on_startup.append(start_ircbot)
-	app.on_cleanup.append(stop_ircbot)
+	if config.IRCBOT_ENABLED:
+		app.on_startup.append(start_ircbot)
+		app.on_cleanup.append(stop_ircbot)
 
 	return app
 

@@ -1,0 +1,49 @@
+# HARDCHATS WebRTC Voice/Video Server - Developed by acidvegas (https://github.com/acidvegas/hardchats)
+# hardchats/livekit.yaml
+#
+# LiveKit SFU config. API keys come from LIVEKIT_KEYS, and setup.sh fills in PUBLIC_IP /
+# PUBLIC_IP6 with this host's addresses, so nothing secret or host-specific lives here.
+
+# Signaling + RoomService API. Only reachable locally: nginx proxies the public signaling
+# path to it, and the hardchats container reaches it over the docker bridge.
+port: 7880
+bind_addresses:
+  - 127.0.0.1
+  - 172.17.0.1
+
+# Media. One UDP port for everything, TCP as a fallback for networks that block UDP.
+rtc:
+  tcp_port: 7881
+  udp_port: 7882
+  use_external_ip: false
+  # Only gather ICE candidates on the public addresses. LiveKit maps every interface to the
+  # node IP, so pings from docker bridge sockets would get NATed onto random ports.
+  ips:
+    includes:
+      - PUBLIC_IP/32
+      - PUBLIC_IP6/128
+  # STUN handed to clients. Without one LiveKit gives them Google/Twilio STUN servers,
+  # which would expose every user's IP to a third party. This is the existing coturn.
+  stun_servers:
+    - turn.hardchats.com:3478
+
+# Built-in TURN over TLS for networks that block both of the above. LiveKit's TURN only
+# relays to this SFU, so it can't be used as an open relay. One listener per address
+# family: each relays on its own node IP, so IPv6 clients get IPv6 relays.
+turn:
+  enabled: true
+  domain: hardchats.com
+  tls_port: 5349
+  udp_port: 0
+  bind_addresses:
+    - PUBLIC_IP
+    - PUBLIC_IP6
+  cert_file: /etc/letsencrypt/live/hardchats.com/fullchain.pem
+  key_file: /etc/letsencrypt/live/hardchats.com/privkey.pem
+
+room:
+  max_participants: 25
+  empty_timeout: 300
+
+logging:
+  level: info

@@ -7,3 +7,5 @@ __pycache__/
 logs/
 .serena
 nickserv-hardchats.txt
+/.venv-test/
+/.livekit-vendor/

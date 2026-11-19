@@ -47,8 +47,8 @@ function showNotification(title, body, tag = null) {
 
 	const options = {
 		body,
-		icon: '/static/favicon.ico',
-		badge: '/static/favicon.ico',
+		icon: 'static/favicon.ico',
+		badge: 'static/favicon.ico',
 		tag: tag || undefined,
 		renotify: !!tag,
 		silent: false
@@ -81,16 +81,16 @@ function getSoundContext() {
 // Preloaded audio elements for join/leave wav files. Reusing one element per
 // sound keeps decode/load off the hot path.
 const SOUND_FILES = {
-	join:  '/static/sounds/gta.wav',
-	leave: '/static/sounds/htp.wav',
-	knock: '/static/sounds/knock.mp3',
-	laugh: '/static/sounds/laugh.mp3',
-	seinfeld: '/static/sounds/seinfeld.mp3',
-	nfl: '/static/sounds/nfl.mp3',
-	crickets: '/static/sounds/crickets.mp3',
-	suspend: '/static/sounds/suspend.mp3',
-	grinder: '/static/sounds/grinder.mp3',
-	iphone: '/static/sounds/iphone.mp3'
+	join:  'static/sounds/gta.wav',
+	leave: 'static/sounds/htp.wav',
+	knock: 'static/sounds/knock.mp3',
+	laugh: 'static/sounds/laugh.mp3',
+	seinfeld: 'static/sounds/seinfeld.mp3',
+	nfl: 'static/sounds/nfl.mp3',
+	crickets: 'static/sounds/crickets.mp3',
+	suspend: 'static/sounds/suspend.mp3',
+	grinder: 'static/sounds/grinder.mp3',
+	iphone: 'static/sounds/iphone.mp3'
 };
 const soundElements = {};
 

@@ -6,3 +6,5 @@ logs
 nickserv-hardchats.txt
 .serena
 .screens
+.venv-test
+.livekit-vendor
