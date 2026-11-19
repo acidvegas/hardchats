@@ -249,7 +249,7 @@ async def index(request: web.Request) -> web.Response:
 		# Cache-bust every JS/CSS asset by stamping the current version into the {{V}}
 		# placeholder on each URL. Bump config.VERSION on deploy to force fresh loads
 		# past any proxy/CDN that ignores no-cache headers.
-		html = f.read().replace('{{V}}', config.VERSION).replace('{{FOOTER_NOTICE}}', config.FOOTER_NOTICE)
+		html = f.read().replace('{{V}}', config.VERSION).replace('{{LOGIN_NOTICE}}', config.LOGIN_NOTICE)
 		return web.Response(
 			text=html,
 			content_type='text/html',
