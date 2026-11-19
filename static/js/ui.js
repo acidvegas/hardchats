@@ -397,9 +397,8 @@ function applyPeerVolume(peerId) {
 
 	const vol = peer.volume ?? 100;
 
-	// audio.volume is 0..1. Slider goes 0..150 for legacy reasons but anything above
-	// 100% has no effect (the previous Web-Audio gain path that supported boost was
-	// removed because mobile browsers wouldn't play its synthesized output).
+	// audio.volume is 0..1, so anything above 100% has no effect (see setupPeerAudio in
+	// webrtc.js for why there is no Web Audio gain boost).
 	if (peer.audioElement) {
 		peer.audioElement.volume = Math.min(1.0, vol / 100);
 	}

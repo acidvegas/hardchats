@@ -154,12 +154,10 @@ function setupLocalAudioAnalyser() {
 // category (earpiece - quiet). Toggling speakerMode tears down each peer's element
 // and recreates it with the new tag.
 //
-// The previous attempt routed audio through a Web Audio GainNode + MediaStreamDestination
-// to support a 0-150% volume slider. That Web-Audio-derived stream is not classified as
-// "real" media on mobile - the audio session never activated, and audio stayed silent
-// until some unrelated media event (a remote peer's camera turning on, which mounts a
-// muted <video> with the WebRTC stream) accidentally activated it. Going direct fixes
-// that. Volume slider now caps at 100% (audio.volume is 0..1) - the >100% boost is gone.
+// Audio deliberately does not go through a Web Audio GainNode + MediaStreamDestination:
+// mobile browsers don't classify that synthesized stream as real media, so the audio
+// session never activates and playback stays silent. Playing the stream directly avoids
+// that, which is why per-user volume caps at 100% (audio.volume is 0..1).
 function setupPeerAudio(peerId, stream) {
 	const peer = state.peers[peerId];
 	if (!peer) return;

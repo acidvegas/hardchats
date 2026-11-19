@@ -9,9 +9,9 @@
 // WebSocket sealed with an ECDH (P-256) shared secret between the two browsers, so the
 // server and the SFU only ever relay public keys and ciphertext.
 //
-// Trust level matches the old peer-to-peer mesh: a passive server can't decrypt, but
-// the server that relays public keys could substitute its own (MITM) if it were
-// actively malicious - there is no out-of-band key verification.
+// Trust model: a passive server or SFU can't decrypt, but the server that relays public
+// keys could substitute its own (MITM) if it were actively malicious - there is no
+// out-of-band key verification.
 //
 // Every participant rotates its sender key whenever someone leaves, so a departed user
 // can't decrypt anything sent after they're gone.

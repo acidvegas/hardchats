@@ -14,7 +14,7 @@ except ImportError:
 IRC_SERVER = 'wss://irc.supernets.org:7000'
 NICK       = 'WSTest123'
 USER       = 'hardchatter'
-REALNAME   = 'https://dev.hardchats.com/'
+REALNAME   = 'https://hardchats.com/'
 CHANNEL    = '#hardchats'
 
 

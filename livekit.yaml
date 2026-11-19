@@ -22,19 +22,17 @@ rtc:
     includes:
       - PUBLIC_IP/32
       - PUBLIC_IP6/128
-  # STUN handed to clients. Without one LiveKit gives them Google/Twilio STUN servers,
-  # which would expose every user's IP to a third party. This is the existing coturn.
-  stun_servers:
-    - turn.hardchats.com:3478
 
-# Built-in TURN over TLS for networks that block both of the above. LiveKit's TURN only
-# relays to this SFU, so it can't be used as an open relay. One listener per address
-# family: each relays on its own node IP, so IPv6 clients get IPv6 relays.
+# Built-in TURN for networks that block both of the above: over TLS (5349) and UDP (3479).
+# The UDP listener also serves as the STUN server handed to clients (without one, LiveKit
+# hands out Google/Twilio STUN, which would expose every user's IP to a third party).
+# LiveKit's TURN only relays to this SFU, so it can't be used as an open relay. One
+# listener per address family: each relays on its own node IP, so IPv6 clients get IPv6 relays.
 turn:
   enabled: true
   domain: hardchats.com
   tls_port: 5349
-  udp_port: 0
+  udp_port: 3479
   bind_addresses:
     - PUBLIC_IP
     - PUBLIC_IP6
