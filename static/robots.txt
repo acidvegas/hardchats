@@ -1,0 +1,6 @@
+User-agent: *
+Disallow: /api/
+Disallow: /ws
+Disallow: /livekit/
+
+Sitemap: https://hardchats.com/sitemap.xml

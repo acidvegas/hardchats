@@ -840,6 +840,10 @@ async def init_app():
 	app.router.add_post('/api/leave', leave_handler)
 	app.router.add_static('/static/', 'static')
 
+	# Files crawlers and browsers look for at the site root
+	for name in ('favicon.ico', 'robots.txt', 'sitemap.xml'):
+		app.router.add_get(f'/{name}', lambda request, name=name: web.FileResponse(f'static/{name}'))
+
 	# Baked-in IRC bot (event announcements + live join/leave in #hardchats)
 	if config.IRCBOT_ENABLED:
 		app.on_startup.append(start_ircbot)
