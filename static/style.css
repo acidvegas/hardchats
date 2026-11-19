@@ -1577,6 +1577,15 @@ button:focus-visible, input:focus-visible {
 	color: var(--text-muted);
 }
 
+.footer-notice {
+	color: var(--text-muted);
+}
+
+.footer-notice a {
+	color: var(--acid);
+	text-decoration: none;
+}
+
 .footer-github {
 	display: flex;
 	align-items: center;
