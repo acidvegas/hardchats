@@ -335,6 +335,24 @@ async def main():
 				s, ok = await wait_stats(bob, f"(s['{A2}']||[]).some(t => t.source === 'camera' && t.subscribed && t.framesDecoded > 5)")
 				check('alice camera is re-published after the rejoin', ok, json.dumps(find(s, A2, 'camera')))
 
+		if want('recording'):
+			# *73# records what you hear (peer audio taps), *74# broadcasts it over the app WebSocket
+			await alice.evaluate('startRecording()')
+			await asyncio.sleep(3)
+			await alice.evaluate('stopRecording()')
+			await alice.wait_for_function('recordedBlob !== null', timeout=5000)
+			size = await alice.evaluate('recordedBlob.size')
+			await bob.evaluate('() => { window.gotRecording = 0; playBroadcastRecording = (audio) => { window.gotRecording = audio.length; }; }')
+			await alice.evaluate("send({ type: 'dial', sequence: '*74#' })")
+			await bob.wait_for_function('window.gotRecording > 0', timeout=10000)
+			check('recording: alice records 3s of the call and bob receives the broadcast', size > 1000, f'blob {size} bytes, bob got {await bob.evaluate("window.gotRecording")} base64 chars')
+
+		if want('soundboard'):
+			await bob.evaluate('() => { window.gotSound = null; playSound = (name) => { window.gotSound = name; }; }')
+			await alice.evaluate("send({ type: 'play_soundboard', sound: 'knock' })")
+			await bob.wait_for_function("window.gotSound === 'knock'", timeout=10000)
+			check('soundboard: bob gets the sound alice picked', True)
+
 		if want('ui'):
 			await bob.click('#debug-btn')
 			await asyncio.sleep(1)
