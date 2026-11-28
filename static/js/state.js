@@ -49,6 +49,7 @@ const state = {
 	schizoMode: false, // Subtle UI shake/wiggle - toggled via *666#
 	pongMode:   false, // Webcam tiles bounce around - toggled via *9059#
 	fedFakeActive: false, // RECORD CALL prank button was pressed (locally only)
+	connecting: false, // Connect pressed and not failed yet - repeat taps are ignored
 	// Reconnection state
 	reconnectToken: null,
 	wsReconnectAttempts: 0,

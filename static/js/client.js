@@ -195,6 +195,7 @@ async function loadUserCount() {
 }
 
 function showError(msg) {
+	state.connecting = false;
 	const el = $('login-error');
 	el.textContent = msg;
 	el.classList.remove('hidden');
@@ -204,6 +205,9 @@ function showError(msg) {
 // ========== CONNECTION ==========
 
 async function connect() {
+	// A second Connect tap would open a second socket, which then sends 'reconnect' with
+	// the first one's token and gets it kicked
+	if (state.connecting) return;
 	const username = $('username').value.trim();
 	const captchaAnswer = $('captcha-answer').value.trim();
 
@@ -220,6 +224,7 @@ async function connect() {
 		return;
 	}
 
+	state.connecting = true;
 	state.username = username;
 	$('login-error').classList.add('hidden');
 
@@ -253,7 +258,7 @@ async function connect() {
 function connectWebSocket(username, captchaId, captchaAnswer) {
 	const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
 	// Relative to the page so the app also works under a path prefix (e.g. /beta/).
-	state.ws = new WebSocket(`${protocol}//${location.host}${location.pathname.replace(/[^/]*$/, '')}ws`);
+	const ws = state.ws = new WebSocket(`${protocol}//${location.host}${location.pathname.replace(/[^/]*$/, '')}ws`);
 
 	state.ws.onopen = () => {
 		state.wsReconnectAttempts = 0; // Reset on successful connection
@@ -289,6 +294,9 @@ function connectWebSocket(username, captchaId, captchaAnswer) {
 
 	state.ws.onclose = (e) => {
 		console.log(`[WS] Disconnected (code: ${e.code}, reason: ${e.reason || 'none'})`);
+
+		// A socket we already replaced (the server closes it when our newer one reconnects)
+		if (ws !== state.ws) return;
 
 		// Don't reconnect if intentional (page leave, etc.)
 		if (state.intentionalDisconnect) return;
